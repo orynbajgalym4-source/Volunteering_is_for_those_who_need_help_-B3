@@ -9,6 +9,7 @@ export function TelegramBridge() {
   const router = useRouter();
 
   useEffect(() => {
+    void ensureTelegramSession().catch(() => undefined);
     let attempts = 0;
     const connect = () => {
       const app = initTelegram();

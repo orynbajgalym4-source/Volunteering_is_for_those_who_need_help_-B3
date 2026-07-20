@@ -3,7 +3,7 @@ import test from "node:test";
 import { calculateReadiness, canTransition, quantities } from "../lib/domain.ts";
 import { validateTelegramInitDataWithToken } from "../lib/telegram-validation.ts";
 import { isAsarCategory, isRequirementType, normalizeRequirementType } from "../lib/catalog.ts";
-import { createTelegramSession, validateTelegramSession } from "../lib/telegram-session.ts";
+import { createTelegramLaunchToken, createTelegramSession, validateTelegramLaunchToken, validateTelegramSession } from "../lib/telegram-session.ts";
 import { createHmac } from "node:crypto";
 
 function requirement(overrides = {}) {
@@ -75,4 +75,12 @@ test("Telegram server session survives page navigation and rejects tampering", a
   assert.deepEqual(await validateTelegramSession(session, "bot-secret", 1_030), identity);
   assert.equal(await validateTelegramSession(`${session}x`, "bot-secret", 1_030), null);
   assert.equal(await validateTelegramSession(session, "bot-secret", 1_061), null);
+});
+
+test("a signed bot launch token works without Telegram initData", async () => {
+  const identity = { id: 73, ownerKey: "telegram:73", displayName: "Айдос", username: null };
+  const token = await createTelegramLaunchToken(identity, "bot-secret", 60, 2_000);
+  assert.deepEqual(await validateTelegramLaunchToken(token, "bot-secret", 2_030), identity);
+  assert.equal(await validateTelegramLaunchToken(token, "wrong-secret", 2_030), null);
+  assert.equal(await validateTelegramSession(token, "bot-secret", 2_030), null);
 });

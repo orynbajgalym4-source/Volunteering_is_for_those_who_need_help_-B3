@@ -11,6 +11,7 @@ export function getTelegramWebApp() {
 }
 
 const INIT_DATA_KEY = "asar.telegram.initData";
+const LAUNCH_TOKEN_KEY = "asar.telegram.launchToken";
 
 function initDataFromUrl() {
   if (typeof window === "undefined") return "";
@@ -29,6 +30,16 @@ export function getTelegramInitData() {
   try { return window.sessionStorage.getItem(INIT_DATA_KEY) ?? ""; } catch { return ""; }
 }
 
+export function getTelegramLaunchToken() {
+  if (typeof window === "undefined") return "";
+  const current = new URLSearchParams(window.location.search).get("launch") ?? "";
+  if (current) {
+    try { window.sessionStorage.setItem(LAUNCH_TOKEN_KEY, current); } catch { /* Storage may be disabled. */ }
+    return current;
+  }
+  try { return window.sessionStorage.getItem(LAUNCH_TOKEN_KEY) ?? ""; } catch { return ""; }
+}
+
 export async function waitForTelegramInitData(timeoutMs = 2_000) {
   const started = Date.now();
   let value = getTelegramInitData();
@@ -41,15 +52,20 @@ export async function waitForTelegramInitData(timeoutMs = 2_000) {
 
 let telegramSessionPromise: Promise<boolean> | null = null;
 
-export function ensureTelegramSession(initData = getTelegramInitData()) {
-  if (!initData) return Promise.resolve(false);
+export function ensureTelegramSession(initData = getTelegramInitData(), launchToken = getTelegramLaunchToken()) {
+  if (!initData && !launchToken) return Promise.resolve(false);
   if (!telegramSessionPromise) {
     telegramSessionPromise = fetch("/api/telegram/session", {
       method: "POST",
       credentials: "include",
-      headers: { "X-Telegram-Init-Data": initData },
+      headers: { ...(initData ? { "X-Telegram-Init-Data": initData } : {}), ...(launchToken ? { "X-Telegram-Launch-Token": launchToken } : {}) },
     }).then((response) => {
       if (!response.ok) throw new Error("Не удалось открыть Telegram-сессию");
+      if (launchToken && typeof window !== "undefined") {
+        const cleanUrl = new URL(window.location.href);
+        cleanUrl.searchParams.delete("launch");
+        window.history.replaceState(window.history.state, "", `${cleanUrl.pathname}${cleanUrl.search}${cleanUrl.hash}`);
+      }
       return true;
     }).catch((error) => {
       telegramSessionPromise = null;

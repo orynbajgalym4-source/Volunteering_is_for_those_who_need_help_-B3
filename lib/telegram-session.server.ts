@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import { createTelegramSession, validateTelegramSession } from "./telegram-session";
+import { createTelegramLaunchToken, createTelegramSession, validateTelegramLaunchToken, validateTelegramSession } from "./telegram-session";
 import type { TelegramIdentity } from "./telegram-validation";
 
 export const TELEGRAM_SESSION_COOKIE = "asar_tg_session";
@@ -21,4 +21,12 @@ export async function createTelegramSessionCookie(identity: TelegramIdentity) {
 
 export function telegramSessionIdentityFromRequest(request: Request) {
   return validateTelegramSession(telegramSessionCookie(request), botToken());
+}
+
+export function createTelegramLaunch(identity: TelegramIdentity) {
+  return createTelegramLaunchToken(identity, botToken());
+}
+
+export function validateTelegramLaunch(token: string) {
+  return validateTelegramLaunchToken(token, botToken());
 }

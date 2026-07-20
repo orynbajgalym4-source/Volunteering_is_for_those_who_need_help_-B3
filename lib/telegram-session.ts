@@ -1,6 +1,7 @@
 import type { TelegramIdentity } from "./telegram-validation";
 
 type SessionPayload = TelegramIdentity & { expiresAt: number; version: 1 };
+type LaunchPayload = SessionPayload & { purpose: "launch" };
 
 function timingSafeEqual(left: string, right: string) {
   if (left.length !== right.length) return false;
@@ -22,8 +23,8 @@ function base64UrlDecode(value: string) {
   return new TextDecoder().decode(Uint8Array.from(binary, (character) => character.charCodeAt(0)));
 }
 
-async function sign(value: string, secret: string) {
-  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(`AsarTelegramSession:${secret}`), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+async function sign(value: string, secret: string, namespace = "Session") {
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(`AsarTelegram${namespace}:${secret}`), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(value));
   return Array.from(new Uint8Array(signature), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
@@ -45,6 +46,29 @@ export async function validateTelegramSession(session: string, secret: string, n
   try {
     const payload = JSON.parse(base64UrlDecode(encoded)) as SessionPayload;
     if (payload.version !== 1 || payload.expiresAt < nowSeconds || !payload.id || !payload.ownerKey || !payload.displayName) return null;
+    return { id: payload.id, ownerKey: payload.ownerKey, displayName: payload.displayName, username: payload.username ?? null };
+  } catch {
+    return null;
+  }
+}
+
+export async function createTelegramLaunchToken(identity: TelegramIdentity, secret: string, ttlSeconds = 86_400, nowSeconds = Math.floor(Date.now() / 1000)) {
+  const payload: LaunchPayload = { ...identity, expiresAt: nowSeconds + ttlSeconds, version: 1, purpose: "launch" };
+  const encoded = base64UrlEncode(JSON.stringify(payload));
+  return `${encoded}.${await sign(encoded, secret, "Launch")}`;
+}
+
+export async function validateTelegramLaunchToken(token: string, secret: string, nowSeconds = Math.floor(Date.now() / 1000)): Promise<TelegramIdentity | null> {
+  if (!token || !secret) return null;
+  const separator = token.lastIndexOf(".");
+  if (separator <= 0) return null;
+  const encoded = token.slice(0, separator);
+  const receivedSignature = token.slice(separator + 1);
+  const expectedSignature = await sign(encoded, secret, "Launch");
+  if (!timingSafeEqual(receivedSignature, expectedSignature)) return null;
+  try {
+    const payload = JSON.parse(base64UrlDecode(encoded)) as LaunchPayload;
+    if (payload.purpose !== "launch" || payload.version !== 1 || payload.expiresAt < nowSeconds || !payload.id || !payload.ownerKey || !payload.displayName) return null;
     return { id: payload.id, ownerKey: payload.ownerKey, displayName: payload.displayName, username: payload.username ?? null };
   } catch {
     return null;
