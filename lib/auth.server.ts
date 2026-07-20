@@ -1,9 +1,10 @@
 import { telegramIdentityFromRequest } from "./telegram-auth.server";
+import { telegramSessionIdentityFromRequest } from "./telegram-session.server";
 
 export type OrganizerIdentity = { email: string; displayName: string };
 
 export async function organizerFromRequest(request: Request): Promise<OrganizerIdentity | null> {
-  const user = await telegramIdentityFromRequest(request);
+  const user = await telegramIdentityFromRequest(request) ?? await telegramSessionIdentityFromRequest(request);
   if (user) return { email: user.ownerKey, displayName: user.displayName };
 
   const host = new URL(request.url).hostname;

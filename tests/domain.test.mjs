@@ -3,6 +3,7 @@ import test from "node:test";
 import { calculateReadiness, canTransition, quantities } from "../lib/domain.ts";
 import { validateTelegramInitDataWithToken } from "../lib/telegram-validation.ts";
 import { isAsarCategory, isRequirementType, normalizeRequirementType } from "../lib/catalog.ts";
+import { createTelegramSession, validateTelegramSession } from "../lib/telegram-session.ts";
 import { createHmac } from "node:crypto";
 
 function requirement(overrides = {}) {
@@ -66,4 +67,12 @@ test("only fixed asar categories and requirement types are accepted", () => {
   assert.equal(isRequirementType("TRANSPORT"), true);
   assert.equal(isRequirementType("строительная помощь"), false);
   assert.equal(normalizeRequirementType("PERSON"), "GENERAL_HELP");
+});
+
+test("Telegram server session survives page navigation and rejects tampering", async () => {
+  const identity = { id: 42, ownerKey: "telegram:42", displayName: "Аружан", username: "aruzhan" };
+  const session = await createTelegramSession(identity, "bot-secret", 60, 1_000);
+  assert.deepEqual(await validateTelegramSession(session, "bot-secret", 1_030), identity);
+  assert.equal(await validateTelegramSession(`${session}x`, "bot-secret", 1_030), null);
+  assert.equal(await validateTelegramSession(session, "bot-secret", 1_061), null);
 });

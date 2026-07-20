@@ -39,6 +39,26 @@ export async function waitForTelegramInitData(timeoutMs = 2_000) {
   return value;
 }
 
+let telegramSessionPromise: Promise<boolean> | null = null;
+
+export function ensureTelegramSession(initData = getTelegramInitData()) {
+  if (!initData) return Promise.resolve(false);
+  if (!telegramSessionPromise) {
+    telegramSessionPromise = fetch("/api/telegram/session", {
+      method: "POST",
+      credentials: "include",
+      headers: { "X-Telegram-Init-Data": initData },
+    }).then((response) => {
+      if (!response.ok) throw new Error("Не удалось открыть Telegram-сессию");
+      return true;
+    }).catch((error) => {
+      telegramSessionPromise = null;
+      throw error;
+    });
+  }
+  return telegramSessionPromise;
+}
+
 export function getTelegramProfile(): TelegramProfile | null {
   const user = getTelegramWebApp()?.initDataUnsafe.user;
   if (!user) return null;

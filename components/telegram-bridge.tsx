@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { initTelegram } from "../lib/telegram";
+import { ensureTelegramSession, initTelegram } from "../lib/telegram";
 
 export function TelegramBridge() {
   const pathname = usePathname();
@@ -12,6 +12,7 @@ export function TelegramBridge() {
     let attempts = 0;
     const connect = () => {
       const app = initTelegram();
+      if (app?.initData) void ensureTelegramSession(app.initData).catch(() => undefined);
       if (!app && attempts < 30) {
         attempts += 1;
         window.setTimeout(connect, 100);
