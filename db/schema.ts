@@ -5,6 +5,7 @@ export const asars = sqliteTable("asars", {
   id: text("id").primaryKey(),
   ownerEmail: text("owner_email").notNull(),
   ownerName: text("owner_name").notNull(),
+  category: text("category").notNull().default("OTHER"),
   title: text("title").notNull(),
   description: text("description").notNull().default(""),
   startsAt: text("starts_at").notNull(),
@@ -21,8 +22,8 @@ export const asars = sqliteTable("asars", {
 export const requirements = sqliteTable("requirements", {
   id: text("id").primaryKey(),
   asarId: text("asar_id").notNull().references(() => asars.id, { onDelete: "cascade" }),
-  kind: text("kind").notNull(),
-  title: text("title").notNull(),
+  type: text("kind").notNull(),
+  customTitle: text("title").notNull(),
   description: text("description").notNull().default(""),
   requiredQuantity: integer("required_quantity").notNull(),
   isCritical: integer("is_critical", { mode: "boolean" }).notNull().default(false),

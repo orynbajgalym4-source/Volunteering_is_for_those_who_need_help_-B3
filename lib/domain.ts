@@ -1,11 +1,13 @@
+import type { RequirementType } from "./catalog";
+
 export type LifecycleStatus = "DRAFT" | "PUBLISHED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
 export type CommitmentStatus = "CLAIMED" | "CONFIRMED" | "ATTENDED" | "CANCELLED" | "NO_SHOW";
 export type ReadinessState = "NOT_READY" | "PROVISIONAL" | "READY";
 
 export type RequirementView = {
   id: string;
-  kind: "PERSON" | "RESOURCE";
-  title: string;
+  type: RequirementType;
+  customTitle: string;
   description: string;
   requiredQuantity: number;
   isCritical: boolean;
@@ -48,10 +50,10 @@ export function quantities(commitments: Array<{ status: CommitmentStatus; quanti
 export function calculateReadiness(requirements: RequirementView[]): Readiness {
   const missingCritical = requirements
     .filter((item) => item.isCritical && item.claimedQuantity < item.requiredQuantity)
-    .map((item) => item.title);
+    .map((item) => item.customTitle);
   const unconfirmedCritical = requirements
     .filter((item) => item.isCritical && item.claimedQuantity >= item.requiredQuantity && item.confirmedQuantity < item.requiredQuantity)
-    .map((item) => item.title);
+    .map((item) => item.customTitle);
 
   const weighted = requirements.reduce(
     (acc, item) => {

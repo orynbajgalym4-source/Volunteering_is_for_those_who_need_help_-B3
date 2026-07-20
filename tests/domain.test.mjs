@@ -2,10 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { calculateReadiness, canTransition, quantities } from "../lib/domain.ts";
 import { validateTelegramInitDataWithToken } from "../lib/telegram-validation.ts";
+import { isAsarCategory, isRequirementType, normalizeRequirementType } from "../lib/catalog.ts";
 import { createHmac } from "node:crypto";
 
 function requirement(overrides = {}) {
-  return { id: "r1", kind: "PERSON", title: "Водитель", description: "", requiredQuantity: 1, isCritical: true, claimedQuantity: 0, confirmedQuantity: 0, ...overrides };
+  return { id: "r1", type: "SPECIALIST", customTitle: "Водитель", description: "", requiredQuantity: 1, isCritical: true, claimedQuantity: 0, confirmedQuantity: 0, ...overrides };
 }
 
 test("critical gap keeps an asar NOT_READY", () => {
@@ -29,7 +30,7 @@ test("all critical roles confirmed make readiness READY", () => {
 test("an unfilled non-critical role does not lower READY", () => {
   const result = calculateReadiness([
     requirement({ claimedQuantity: 1, confirmedQuantity: 1 }),
-    requirement({ id: "r2", title: "Термос", isCritical: false }),
+    requirement({ id: "r2", type: "MATERIAL", customTitle: "Термос", isCritical: false }),
   ]);
   assert.equal(result.state, "READY");
 });
@@ -57,4 +58,12 @@ test("Telegram initData is accepted only with a valid bot signature", async () =
   assert.equal(identity?.ownerKey, "telegram:42");
   assert.equal(identity?.displayName, "Аружан");
   assert.equal(await validateTelegramInitDataWithToken(valid, "wrong-token"), null);
+});
+
+test("only fixed asar categories and requirement types are accepted", () => {
+  assert.equal(isAsarCategory("OTHER"), true);
+  assert.equal(isAsarCategory("ремонт дома"), false);
+  assert.equal(isRequirementType("TRANSPORT"), true);
+  assert.equal(isRequirementType("строительная помощь"), false);
+  assert.equal(normalizeRequirementType("PERSON"), "GENERAL_HELP");
 });

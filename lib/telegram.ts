@@ -10,6 +10,35 @@ export function getTelegramWebApp() {
   return typeof window === "undefined" ? null : window.Telegram?.WebApp ?? null;
 }
 
+const INIT_DATA_KEY = "asar.telegram.initData";
+
+function initDataFromUrl() {
+  if (typeof window === "undefined") return "";
+  const hash = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+  const search = new URLSearchParams(window.location.search);
+  return hash.get("tgWebAppData") ?? search.get("tgWebAppData") ?? "";
+}
+
+export function getTelegramInitData() {
+  if (typeof window === "undefined") return "";
+  const current = getTelegramWebApp()?.initData || initDataFromUrl();
+  if (current) {
+    try { window.sessionStorage.setItem(INIT_DATA_KEY, current); } catch { /* Storage may be disabled. */ }
+    return current;
+  }
+  try { return window.sessionStorage.getItem(INIT_DATA_KEY) ?? ""; } catch { return ""; }
+}
+
+export async function waitForTelegramInitData(timeoutMs = 2_000) {
+  const started = Date.now();
+  let value = getTelegramInitData();
+  while (!value && Date.now() - started < timeoutMs) {
+    await new Promise((resolve) => window.setTimeout(resolve, 50));
+    value = getTelegramInitData();
+  }
+  return value;
+}
+
 export function getTelegramProfile(): TelegramProfile | null {
   const user = getTelegramWebApp()?.initDataUnsafe.user;
   if (!user) return null;
@@ -19,6 +48,7 @@ export function getTelegramProfile(): TelegramProfile | null {
 export function initTelegram() {
   const app = getTelegramWebApp();
   if (!app) return null;
+  getTelegramInitData();
   app.ready();
   app.expand();
   app.setHeaderColor("#f5f0e6");

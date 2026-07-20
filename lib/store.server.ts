@@ -1,5 +1,6 @@
 import { env } from "cloudflare:workers";
 import { calculateReadiness, quantities, type CommitmentStatus, type RequirementView } from "./domain";
+import { normalizeAsarCategory, normalizeRequirementType } from "./catalog";
 
 export function database(): D1Database {
   if (!env.DB) throw new Error("D1 binding DB is unavailable");
@@ -13,6 +14,7 @@ export async function ensureDatabase() {
   await db.batch([
     db.prepare(`CREATE TABLE IF NOT EXISTS asars (
       id TEXT PRIMARY KEY, owner_email TEXT NOT NULL, owner_name TEXT NOT NULL,
+      category TEXT NOT NULL DEFAULT 'OTHER',
       title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', starts_at TEXT NOT NULL,
       public_location TEXT NOT NULL, exact_address TEXT NOT NULL,
       lifecycle_status TEXT NOT NULL DEFAULT 'DRAFT', beneficiary_consent_confirmed INTEGER NOT NULL DEFAULT 0,
@@ -51,7 +53,7 @@ export async function ensureDatabase() {
 }
 
 type RawRequirement = {
-  id: string; kind: "PERSON" | "RESOURCE"; title: string; description: string;
+  id: string; kind: string; title: string; description: string;
   required_quantity: number; is_critical: number; sort_order: number;
 };
 type RawCommitment = {
@@ -69,8 +71,8 @@ export async function getRequirements(asarId: string, includeContacts = false): 
     const total = quantities(related.map((item) => ({ status: item.status, quantity: item.quantity })));
     return {
       id: row.id,
-      kind: row.kind,
-      title: row.title,
+      type: normalizeRequirementType(row.kind),
+      customTitle: row.title,
       description: row.description,
       requiredQuantity: row.required_quantity,
       isCritical: Boolean(row.is_critical),
@@ -105,6 +107,7 @@ export function mapAsar(row: Record<string, unknown>) {
   return {
     id: row.id,
     ownerName: row.owner_name,
+    category: normalizeAsarCategory(row.category),
     title: row.title,
     description: row.description,
     startsAt: row.starts_at,

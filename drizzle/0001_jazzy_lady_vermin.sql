@@ -1,0 +1,1 @@
+ALTER TABLE `asars` ADD `category` text DEFAULT 'OTHER' NOT NULL;

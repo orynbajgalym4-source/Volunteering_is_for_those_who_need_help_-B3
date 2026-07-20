@@ -1,6 +1,7 @@
 import { calculateReadiness } from "../../../../../lib/domain";
 import { hashToken, normalizeContact, randomToken } from "../../../../../lib/security";
 import { database, ensureDatabase, getRequirements, mapAsar } from "../../../../../lib/store.server";
+import { isIndividualContribution } from "../../../../../lib/catalog";
 
 type InviteRow = {
   id: string; asar_id: string; requirement_id: string | null; scope: "FULL_ASAR" | "SINGLE_REQUIREMENT";
@@ -67,7 +68,7 @@ export async function POST(request: Request, context: { params: Promise<{ token:
   }
   const allowed = await database().prepare("SELECT id, kind FROM requirements WHERE id = ? AND asar_id = ?").bind(requirementId, invite!.asar_id).first<{ id: string; kind: string }>();
   if (!allowed) return Response.json({ code: "INVALID_REQUIREMENT", message: "Потребность недоступна" }, { status: 404 });
-  if (allowed.kind === "PERSON" && quantity !== 1) return Response.json({ code: "INVALID_QUANTITY", message: "Один человек может занять одно место" }, { status: 400 });
+  if (isIndividualContribution(allowed.kind) && quantity !== 1) return Response.json({ code: "INVALID_QUANTITY", message: "Один человек может занять одно место" }, { status: 400 });
 
   const manageToken = randomToken();
   const contactHash = await hashToken(normalizeContact(payload.contactValue));
