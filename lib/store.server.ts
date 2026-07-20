@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import { calculateReadiness, quantities, type CommitmentStatus, type RequirementView } from "./domain";
+import { calculateReadiness, effectiveLifecycleStatus, quantities, type CommitmentStatus, type RequirementView } from "./domain";
 import { normalizeAsarCategory, normalizeRequirementType } from "./catalog";
 
 export function database(): D1Database {
@@ -43,6 +43,10 @@ export async function ensureDatabase() {
       cancelled_at TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       UNIQUE(requirement_id, normalized_contact_hash)
+    )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS user_preferences (
+      owner_key TEXT PRIMARY KEY, bot_messages_allowed INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )`),
     db.prepare("CREATE INDEX IF NOT EXISTS asars_owner_idx ON asars(owner_email)"),
     db.prepare("CREATE INDEX IF NOT EXISTS requirements_asar_idx ON requirements(asar_id)"),
@@ -113,7 +117,7 @@ export function mapAsar(row: Record<string, unknown>) {
     startsAt: row.starts_at,
     publicLocation: row.public_location,
     exactAddress: row.exact_address,
-    lifecycleStatus: row.lifecycle_status,
+    lifecycleStatus: effectiveLifecycleStatus(String(row.lifecycle_status), String(row.starts_at)),
     beneficiaryConsentConfirmed: Boolean(row.beneficiary_consent_confirmed),
     outcome: row.outcome,
     outcomeNote: row.outcome_note,

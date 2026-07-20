@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { calculateReadiness, canTransition, quantities } from "../lib/domain.ts";
+import { calculateReadiness, canTransition, effectiveLifecycleStatus, isRecruitmentOpen, quantities } from "../lib/domain.ts";
 import { validateTelegramInitDataWithToken } from "../lib/telegram-validation.ts";
 import { isAsarCategory, isRequirementType, normalizeRequirementType } from "../lib/catalog.ts";
 import { createTelegramLaunchToken, createTelegramSession, validateTelegramLaunchToken, validateTelegramSession } from "../lib/telegram-session.ts";
@@ -45,6 +45,20 @@ test("terminal lifecycle states cannot reopen", () => {
   assert.equal(canTransition("DRAFT", "PUBLISHED"), true);
   assert.equal(canTransition("COMPLETED", "PUBLISHED"), false);
   assert.equal(canTransition("CANCELLED", "IN_PROGRESS"), false);
+});
+
+test("recruitment stays open while an asar is in progress", () => {
+  assert.equal(isRecruitmentOpen("PUBLISHED"), true);
+  assert.equal(isRecruitmentOpen("IN_PROGRESS"), true);
+  assert.equal(isRecruitmentOpen("COMPLETED"), false);
+});
+
+test("active asars become historical 24 hours after their start", () => {
+  const start = "2026-07-20T10:00:00.000Z";
+  assert.equal(effectiveLifecycleStatus("PUBLISHED", start, new Date("2026-07-21T09:59:00.000Z").getTime()), "PUBLISHED");
+  assert.equal(effectiveLifecycleStatus("PUBLISHED", start, new Date("2026-07-21T10:00:00.000Z").getTime()), "EXPIRED");
+  assert.equal(effectiveLifecycleStatus("DRAFT", start, new Date("2026-07-30T10:00:00.000Z").getTime()), "DRAFT");
+  assert.equal(effectiveLifecycleStatus("PUBLISHED", "2026-07-20T10:00", new Date("2026-07-21T05:00:00.000Z").getTime()), "EXPIRED");
 });
 
 test("Telegram initData is accepted only with a valid bot signature", async () => {

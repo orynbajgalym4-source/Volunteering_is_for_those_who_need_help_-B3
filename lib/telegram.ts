@@ -4,6 +4,7 @@ export type TelegramProfile = {
   lastName?: string;
   username?: string;
   photoUrl?: string;
+  allowsWriteToPm?: boolean;
 };
 
 export function getTelegramWebApp() {
@@ -78,7 +79,7 @@ export function ensureTelegramSession(initData = getTelegramInitData(), launchTo
 export function getTelegramProfile(): TelegramProfile | null {
   const user = getTelegramWebApp()?.initDataUnsafe.user;
   if (!user) return null;
-  return { id: user.id, firstName: user.first_name, lastName: user.last_name, username: user.username, photoUrl: user.photo_url };
+  return { id: user.id, firstName: user.first_name, lastName: user.last_name, username: user.username, photoUrl: user.photo_url, allowsWriteToPm: user.allows_write_to_pm };
 }
 
 export function initTelegram() {

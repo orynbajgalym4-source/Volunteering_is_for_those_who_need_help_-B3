@@ -1,4 +1,4 @@
-import { calculateReadiness } from "../../../../../lib/domain";
+import { calculateReadiness, effectiveLifecycleStatus, isRecruitmentOpen } from "../../../../../lib/domain";
 import { hashToken, normalizeContact, randomToken } from "../../../../../lib/security";
 import { database, ensureDatabase, getRequirements, mapAsar } from "../../../../../lib/store.server";
 import { isIndividualContribution } from "../../../../../lib/catalog";
@@ -51,8 +51,9 @@ export async function POST(request: Request, context: { params: Promise<{ token:
   const invite = await inviteByToken(token);
   const error = validateInvite(invite);
   if (error) return Response.json({ code: "INVITE_INVALID", message: error }, { status: 410 });
-  const asarRow = await database().prepare("SELECT lifecycle_status FROM asars WHERE id = ?").bind(invite!.asar_id).first<{ lifecycle_status: string }>();
-  if (!asarRow || asarRow.lifecycle_status !== "PUBLISHED") {
+  const asarRow = await database().prepare("SELECT lifecycle_status, starts_at FROM asars WHERE id = ?").bind(invite!.asar_id).first<{ lifecycle_status: string; starts_at: string }>();
+  const lifecycle = asarRow ? effectiveLifecycleStatus(asarRow.lifecycle_status, asarRow.starts_at) : "CANCELLED";
+  if (!isRecruitmentOpen(lifecycle)) {
     return Response.json({ code: "RECRUITMENT_CLOSED", message: "Набор в этот асар уже закрыт" }, { status: 409 });
   }
   const payload = await request.json() as {
@@ -73,12 +74,23 @@ export async function POST(request: Request, context: { params: Promise<{ token:
   const manageToken = randomToken();
   const contactHash = await hashToken(normalizeContact(payload.contactValue));
   try {
-    const result = await database().prepare(`INSERT INTO commitments
-      (id, requirement_id, participant_name, contact_type, contact_value, normalized_contact_hash, quantity, status, manage_token_hash, comment)
-      SELECT ?, ?, ?, ?, ?, ?, ?, 'CLAIMED', ?, ?
-      WHERE (SELECT COALESCE(SUM(quantity), 0) FROM commitments WHERE requirement_id = ? AND status IN ('CLAIMED','CONFIRMED','ATTENDED')) + ?
-        <= (SELECT required_quantity FROM requirements WHERE id = ?)`)
-      .bind(crypto.randomUUID(), requirementId, payload.participantName.trim(), payload.contactType === "PHONE" ? "PHONE" : "TELEGRAM", payload.contactValue.trim(), contactHash, quantity, await hashToken(manageToken), payload.comment?.trim() ?? "", requirementId, quantity, requirementId).run();
+    const db = database();
+    const columns = await db.prepare("PRAGMA table_info(commitments)").all<{ name: string }>();
+    const hasLegacyPreview = columns.results.some((column) => column.name === "manage_token_preview");
+    const common = [crypto.randomUUID(), requirementId, payload.participantName.trim(), payload.contactType === "PHONE" ? "PHONE" : "TELEGRAM", payload.contactValue.trim(), contactHash, quantity, await hashToken(manageToken)] as const;
+    const result = hasLegacyPreview
+      ? await db.prepare(`INSERT INTO commitments
+        (id, requirement_id, participant_name, contact_type, contact_value, normalized_contact_hash, quantity, status, manage_token_hash, manage_token_preview, comment)
+        SELECT ?, ?, ?, ?, ?, ?, ?, 'CLAIMED', ?, ?, ?
+        WHERE (SELECT COALESCE(SUM(quantity), 0) FROM commitments WHERE requirement_id = ? AND status IN ('CLAIMED','CONFIRMED','ATTENDED')) + ?
+          <= (SELECT required_quantity FROM requirements WHERE id = ?)`)
+        .bind(...common, manageToken.slice(0, 8), payload.comment?.trim() ?? "", requirementId, quantity, requirementId).run()
+      : await db.prepare(`INSERT INTO commitments
+        (id, requirement_id, participant_name, contact_type, contact_value, normalized_contact_hash, quantity, status, manage_token_hash, comment)
+        SELECT ?, ?, ?, ?, ?, ?, ?, 'CLAIMED', ?, ?
+        WHERE (SELECT COALESCE(SUM(quantity), 0) FROM commitments WHERE requirement_id = ? AND status IN ('CLAIMED','CONFIRMED','ATTENDED')) + ?
+          <= (SELECT required_quantity FROM requirements WHERE id = ?)`)
+        .bind(...common, payload.comment?.trim() ?? "", requirementId, quantity, requirementId).run();
     if (!result.meta.changes) {
       return Response.json({ code: "REQUIREMENT_FULL", message: "Эту роль только что занял другой человек" }, { status: 409 });
     }

@@ -15,6 +15,13 @@
       "when": 1784555058965,
       "tag": "0001_jazzy_lady_vermin",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1784572381157,
+      "tag": "0002_little_goblin_queen",
+      "breakpoints": true
     }
   ]
 }

@@ -22,9 +22,9 @@ export function OrganizerDashboard({ embedded = false, profile }: { embedded?: b
   }, []);
 
   const visible = useMemo(() => items.filter((item) => {
-    if (filter === "ready") return item.readiness.state === "READY" && !["COMPLETED", "CANCELLED"].includes(item.lifecycleStatus);
-    if (filter === "done") return ["COMPLETED", "CANCELLED"].includes(item.lifecycleStatus);
-    return !["COMPLETED", "CANCELLED"].includes(item.lifecycleStatus);
+    if (filter === "ready") return item.readiness.state === "READY" && !["COMPLETED", "CANCELLED", "EXPIRED"].includes(item.lifecycleStatus);
+    if (filter === "done") return ["COMPLETED", "CANCELLED", "EXPIRED"].includes(item.lifecycleStatus);
+    return !["COMPLETED", "CANCELLED", "EXPIRED"].includes(item.lifecycleStatus);
   }), [filter, items]);
 
   return <div className={embedded ? "app-page tg-dashboard" : "app-page"}>

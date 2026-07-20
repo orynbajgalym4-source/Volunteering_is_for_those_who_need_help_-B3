@@ -27,6 +27,9 @@ export async function POST(request: Request) {
   const startsAt = payload.startsAt?.trim() ?? "";
   const requirements = payload.requirements ?? [];
   if (!title || !startsAt) return Response.json({ code: "INVALID_ASAR", message: "Укажите название и дату" }, { status: 400 });
+  if (!Number.isFinite(new Date(startsAt).getTime()) || new Date(startsAt).getTime() <= Date.now()) {
+    return Response.json({ code: "INVALID_START_TIME", message: "Выберите будущую дату и время" }, { status: 400 });
+  }
   if (!isAsarCategory(payload.category)) return Response.json({ code: "INVALID_CATEGORY", message: "Выберите одну из категорий асара" }, { status: 400 });
   if (!payload.beneficiaryConsentConfirmed) return Response.json({ code: "CONSENT_REQUIRED", message: "Подтвердите согласие получателя помощи" }, { status: 400 });
   if (requirements.length === 0 || !requirements.some((item) => item.isCritical)) {

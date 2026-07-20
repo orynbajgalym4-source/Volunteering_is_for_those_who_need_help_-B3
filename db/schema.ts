@@ -64,3 +64,9 @@ export const commitments = sqliteTable("commitments", {
   uniqueIndex("commitments_contact_requirement_idx").on(table.requirementId, table.normalizedContactHash),
   index("commitments_requirement_idx").on(table.requirementId),
 ]);
+
+export const userPreferences = sqliteTable("user_preferences", {
+  ownerKey: text("owner_key").primaryKey(),
+  botMessagesAllowed: integer("bot_messages_allowed", { mode: "boolean" }).notNull().default(false),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});

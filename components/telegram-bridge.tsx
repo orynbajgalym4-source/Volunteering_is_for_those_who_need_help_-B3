@@ -25,7 +25,13 @@ export function TelegramBridge() {
   useEffect(() => {
     const app = window.Telegram?.WebApp;
     if (!app) return;
-    const goBack = () => router.back();
+    const goBack = () => {
+      const nestedAsar = pathname.match(/^\/app\/asars\/([^/]+)\/(?:share|day|complete)$/);
+      if (nestedAsar) return router.push(`/app/asars/${nestedAsar[1]}`);
+      if (pathname === "/app/asars/new" || /^\/app\/asars\/[^/]+$/.test(pathname)) return router.push("/app/asars");
+      if (pathname === "/app/profile") return router.push("/");
+      return router.push("/");
+    };
     if (pathname === "/" || pathname === "/app/asars") app.BackButton.hide();
     else { app.BackButton.show(); app.BackButton.onClick(goBack); }
     return () => app.BackButton.offClick(goBack);

@@ -18,20 +18,28 @@ export function CreateAsar() {
   const [step, setStep] = useState(1);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [minimumDate] = useState(() => {
+    const now = new Date();
+    now.setSeconds(0, 0);
+    const offset = now.getTimezoneOffset() * 60_000;
+    return new Date(now.getTime() - offset).toISOString().slice(0, 16);
+  });
   const [form, setForm] = useState<{ category: AsarCategory; title: string; description: string; startsAt: string; publicLocation: string; exactAddress: string; beneficiaryConsentConfirmed: boolean }>({ category: "MOVE_TRANSPORT", title: "", description: "", startsAt: "", publicLocation: "", exactAddress: "", beneficiaryConsentConfirmed: false });
   const [requirements, setRequirements] = useState<RequirementDraft[]>(initialRequirements);
   const update = (key: string, value: string | boolean) => setForm((current) => ({ ...current, [key]: value }));
   const updateRequirement = (index: number, patch: Partial<RequirementDraft>) => setRequirements((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item));
+  const changeQuantity = (index: number, delta: number) => updateRequirement(index, { requiredQuantity: Math.max(1, requirements[index].requiredQuantity + delta) });
   const next = () => {
     setError("");
     if (step === 1 && (!form.title.trim() || !form.startsAt || !form.beneficiaryConsentConfirmed)) return setError("Укажите название, дату и подтвердите согласие получателя.");
+    if (step === 1 && new Date(form.startsAt).getTime() <= Date.now()) return setError("Выберите будущую дату и время.");
     if (step === 2 && (!requirements.length || requirements.some((item) => !item.customTitle.trim() || item.requiredQuantity < 1) || !requirements.some((item) => item.isCritical))) return setError("Добавьте хотя бы одну корректную критическую потребность.");
     setStep((value) => Math.min(3, value + 1));
   };
   const submit = async () => {
     setBusy(true); setError("");
     try {
-      const data = await api<{ asar: AsarView }>("/api/asars", { method: "POST", body: JSON.stringify({ ...form, requirements }) });
+      const data = await api<{ asar: AsarView }>("/api/asars", { method: "POST", body: JSON.stringify({ ...form, startsAt: new Date(form.startsAt).toISOString(), requirements }) });
       telegramHaptic("success");
       router.push(`/app/asars/${data.asar.id}`);
     } catch (caught) { telegramHaptic("error"); setError(caught instanceof Error ? caught.message : "Не удалось создать асар"); setBusy(false); }
@@ -45,19 +53,18 @@ export function CreateAsar() {
       <div className="field full"><span className="field-label">Ближайший сценарий *</span><div className="category-grid">{ASAR_CATEGORIES.map((item) => <button type="button" className={`category-option ${form.category === item.value ? "selected" : ""}`} aria-pressed={form.category === item.value} onClick={() => setForm((current) => ({ ...current, category: item.value }))} key={item.value}><span>{item.icon}</span><strong>{item.label}</strong></button>)}</div><small className="field-hint">Категория помогает начать, но не ограничивает описание асара.</small></div>
       <div className="field full"><label htmlFor="title">Название асара *</label><input id="title" className="input" value={form.title} onChange={(event) => update("title", event.target.value)} placeholder="Например: подготовить двор апай к зиме" /></div>
       <div className="field full"><label htmlFor="description">Что нужно сделать</label><textarea id="description" className="textarea" value={form.description} onChange={(event) => update("description", event.target.value)} placeholder="Коротко и конкретно опишите задачу" /></div>
-      <div className="field"><label htmlFor="startsAt">Дата и время *</label><input id="startsAt" className="input" type="datetime-local" value={form.startsAt} onChange={(event) => update("startsAt", event.target.value)} /></div>
+      <div className="field"><label htmlFor="startsAt">Дата и время *</label><input id="startsAt" className="input" type="datetime-local" min={minimumDate} value={form.startsAt} onChange={(event) => update("startsAt", event.target.value)} /><small className="field-hint">Прошедшее время выбрать нельзя.</small></div>
       <div className="field"><label htmlFor="location">Район для гостей</label><input id="location" className="input" value={form.publicLocation} onChange={(event) => update("publicLocation", event.target.value)} placeholder="Алмалинский район" /></div>
       <div className="field full"><label htmlFor="address">Точный адрес</label><input id="address" className="input" value={form.exactAddress} onChange={(event) => update("exactAddress", event.target.value)} placeholder="Откроется только подтверждённым участникам" /></div>
       <label className="checkbox-row field full"><input type="checkbox" checked={form.beneficiaryConsentConfirmed} onChange={(event) => update("beneficiaryConsentConfirmed", event.target.checked)} /><span>Получатель помощи согласен на проведение асара и публикацию минимального описания.</span></label>
     </div></section>}
-    {step === 2 && <section className="panel"><h2>Потребности асара</h2><p className="panel-lead">Выберите один из пяти типов и свободно назовите конкретный вклад. Новые системные категории здесь не создаются.</p>
-      {requirements.map((item, index) => <div className="requirement-editor" key={index}>
-        <select className="select" value={item.type} onChange={(event) => updateRequirement(index, { type: event.target.value as RequirementType })}>{REQUIREMENT_TYPES.map((type) => <option value={type.value} key={type.value}>{type.label}</option>)}</select>
-        <input className="input" value={item.customTitle} onChange={(event) => updateRequirement(index, { customTitle: event.target.value })} aria-label="Название потребности" placeholder="Например: электрик или микроавтобус" />
-        <input className="input" value={item.description} onChange={(event) => updateRequirement(index, { description: event.target.value })} aria-label="Описание потребности" placeholder="Что именно требуется" />
-        <input className="input" type="number" min="1" value={item.requiredQuantity} onChange={(event) => updateRequirement(index, { requiredQuantity: Number(event.target.value) })} aria-label="Количество" />
-        <label className="checkbox-row critical-toggle"><input type="checkbox" checked={item.isCritical} onChange={(event) => updateRequirement(index, { isCritical: event.target.checked })} />Критично</label>
-        <button className="icon-button" onClick={() => setRequirements((current) => current.filter((_, itemIndex) => itemIndex !== index))} aria-label="Удалить потребность">×</button>
+    {step === 2 && <section className="panel"><h2>Что понадобится?</h2><p className="panel-lead">Каждая карточка — один понятный вклад. Сначала выберите тип, затем напишите конкретно, кого или что ищете.</p>
+      {requirements.map((item, index) => <div className="requirement-editor-v2" key={index}>
+        <div className="requirement-editor-top"><strong>Потребность {index + 1}</strong><button className="icon-button" type="button" onClick={() => setRequirements((current) => current.filter((_, itemIndex) => itemIndex !== index))} aria-label="Удалить потребность">×</button></div>
+        <div className="field full"><span>Тип вклада *</span><div className="type-choice" role="group" aria-label={`Тип потребности ${index + 1}`}>{REQUIREMENT_TYPES.map((type) => <button type="button" className={item.type === type.value ? "selected" : ""} aria-pressed={item.type === type.value} onClick={() => updateRequirement(index, { type: type.value })} key={type.value}><span>{type.icon}</span>{type.label}</button>)}</div></div>
+        <div className="requirement-fields"><div className="field"><label htmlFor={`requirement-title-${index}`}>Кого или что ищем? *</label><input id={`requirement-title-${index}`} className="input" value={item.customTitle} onChange={(event) => updateRequirement(index, { customTitle: event.target.value })} placeholder="Например: электрик" /><small className="field-hint">Это название увидят участники в карточке.</small></div>
+        <div className="field"><label htmlFor={`requirement-description-${index}`}>Что именно нужно?</label><input id={`requirement-description-${index}`} className="input" value={item.description} onChange={(event) => updateRequirement(index, { description: event.target.value })} placeholder="Например: подключить уличный свет" /><small className="field-hint">Коротко уточните задачу или характеристики.</small></div></div>
+        <div className="requirement-controls"><div className="field"><span>{item.type === "GENERAL_HELP" || item.type === "SPECIALIST" ? "Сколько человек нужно?" : "Сколько единиц нужно?"}</span><div className="quantity-stepper"><button type="button" onClick={() => changeQuantity(index, -1)} disabled={item.requiredQuantity <= 1} aria-label="Уменьшить количество">−</button><strong>{item.requiredQuantity}</strong><button type="button" onClick={() => changeQuantity(index, 1)} aria-label="Увеличить количество">+</button></div></div><label className="checkbox-card"><input type="checkbox" checked={item.isCritical} onChange={(event) => updateRequirement(index, { isCritical: event.target.checked })} /><span><strong>Без этого асар не состоится</strong><small>Отметьте только действительно критичный вклад.</small></span></label></div>
       </div>)}
       <button className="add-row" onClick={() => setRequirements((current) => [...current, { type: "GENERAL_HELP", customTitle: "", description: "", requiredQuantity: 1, isCritical: false }])}>+ Добавить потребность</button>
     </section>}

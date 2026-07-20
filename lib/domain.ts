@@ -1,6 +1,6 @@
 import type { RequirementType } from "./catalog";
 
-export type LifecycleStatus = "DRAFT" | "PUBLISHED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
+export type LifecycleStatus = "DRAFT" | "PUBLISHED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED" | "EXPIRED";
 export type CommitmentStatus = "CLAIMED" | "CONFIRMED" | "ATTENDED" | "CANCELLED" | "NO_SHOW";
 export type ReadinessState = "NOT_READY" | "PROVISIONAL" | "READY";
 
@@ -80,6 +80,25 @@ export function canTransition(from: LifecycleStatus, to: LifecycleStatus) {
     IN_PROGRESS: ["COMPLETED", "CANCELLED"],
     COMPLETED: [],
     CANCELLED: [],
+    EXPIRED: [],
   };
   return allowed[from].includes(to);
+}
+
+export function effectiveLifecycleStatus(status: string, startsAt: string, now = Date.now()): LifecycleStatus {
+  const normalized = (["DRAFT", "PUBLISHED", "IN_PROGRESS", "COMPLETED", "CANCELLED"] as const).includes(status as never)
+    ? status as Exclude<LifecycleStatus, "EXPIRED">
+    : "DRAFT";
+  if (!["PUBLISHED", "IN_PROGRESS"].includes(normalized)) return normalized;
+  const normalizedDate = /(?:Z|[+-]\d{2}:?\d{2})$/.test(startsAt) ? startsAt : `${startsAt.replace(" ", "T")}+05:00`;
+  const startsAtMs = new Date(normalizedDate).getTime();
+  return Number.isFinite(startsAtMs) && startsAtMs + 24 * 60 * 60 * 1000 <= now ? "EXPIRED" : normalized;
+}
+
+export function isTerminalLifecycle(status: string) {
+  return status === "COMPLETED" || status === "CANCELLED" || status === "EXPIRED";
+}
+
+export function isRecruitmentOpen(status: string) {
+  return status === "PUBLISHED" || status === "IN_PROGRESS";
 }
