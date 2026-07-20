@@ -15,5 +15,5 @@ export async function organizerFromRequest(request: Request): Promise<OrganizerI
 }
 
 export function unauthorized() {
-  return Response.json({ code: "UNAUTHORIZED", message: "Откройте Asar через Telegram-бота" }, { status: 401 });
+  return Response.json({ code: "UNAUTHORIZED", message: "Это окно открыто старой кнопкой. Закройте его, отправьте /start боту и нажмите новую кнопку «Открыть Asar»." }, { status: 401 });
 }
