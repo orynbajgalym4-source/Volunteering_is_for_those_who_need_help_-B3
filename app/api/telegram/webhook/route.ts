@@ -23,6 +23,13 @@ export async function POST(request: Request) {
     ? "Вас пригласили в асар. Откройте карточку, выберите конкретный вклад и подтвердите участие — аккаунт создавать не нужно."
     : `Сәлем${firstName}! Asar помогает собрать людей и ресурсы вокруг одного общего дела и заранее увидеть риск срыва.`;
 
+  try {
+    await telegramBotCall("setChatMenuButton", {
+      chat_id: message.chat.id,
+      menu_button: { type: "web_app", text: "Открыть Asar", web_app: { url: origin } },
+    });
+  } catch { /* The inline launch button below remains available. */ }
+
   await telegramBotCall("sendMessage", {
     chat_id: message.chat.id,
     text,
