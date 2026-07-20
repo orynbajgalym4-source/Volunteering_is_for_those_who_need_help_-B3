@@ -142,3 +142,71 @@ button { cursor: pointer; }
 }
 
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; transition: none !important; animation-duration: .01ms !important; } }
+
+/* Telegram Mini App */
+.telegram-miniapp {
+  --milk: var(--tg-theme-bg-color, #f5f0e6);
+  --paper: var(--tg-theme-section-bg-color, #fffdf8);
+  --ink: var(--tg-theme-text-color, #20221f);
+  --muted: var(--tg-theme-hint-color, #6f716a);
+  color-scheme: light;
+}
+.telegram-miniapp body { background: var(--milk); overscroll-behavior-y: none; }
+.telegram-miniapp .app-header { display: none; }
+.telegram-miniapp .app-page { background: var(--milk); padding-bottom: calc(82px + env(safe-area-inset-bottom)); }
+.telegram-miniapp .app-main { width: 100%; padding: 18px 14px 30px; }
+.telegram-miniapp .page-heading { margin-bottom: 22px; }
+.telegram-miniapp .page-heading h1 { font-size: clamp(34px, 10vw, 48px); }
+.telegram-miniapp .page-heading p { font-size: 13px; line-height: 1.45; }
+.telegram-miniapp .page-heading-actions { width: 100%; }
+.telegram-miniapp .page-heading-actions .button { flex: 1; }
+.telegram-miniapp .panel,
+.telegram-miniapp .asar-card,
+.telegram-miniapp .side-panel,
+.telegram-miniapp .requirement-card,
+.telegram-miniapp .share-card { background: var(--paper); }
+.telegram-miniapp .app-main.wizard-shell { max-width: 760px; }
+.telegram-miniapp .guest-page { min-height: var(--tg-viewport-stable-height, 100vh); padding-top: env(safe-area-inset-top); }
+.telegram-miniapp .guest-top { padding-top: 12px; }
+.telegram-miniapp .button { min-height: 48px; }
+.telegram-miniapp .input,
+.telegram-miniapp .textarea,
+.telegram-miniapp .select { font-size: 16px; }
+
+.tg-boot { min-height: 100vh; display: grid; place-content: center; justify-items: center; color: var(--muted); }
+.tg-outside { min-height: 100vh; max-width: 520px; padding: 42px 24px; margin: auto; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; }
+.tg-outside-mark { width: 104px; height: 104px; margin: 55px 0 25px; border-radius: 50% 50% 45% 45%; background: var(--emerald); color: white; display: grid; place-items: center; font: 54px Georgia, serif; box-shadow: 0 20px 60px rgba(12,102,80,.25); }
+.tg-outside h1 { margin: 0; font: 44px/1 Georgia, serif; letter-spacing: -.045em; }
+.tg-outside p { max-width: 420px; color: var(--muted); font: 17px/1.55 Georgia, serif; margin: 18px 0 28px; }
+.tg-homebar { display: flex; align-items: center; justify-content: space-between; padding: max(4px, env(safe-area-inset-top)) 2px 22px; }
+.tg-homebar > div:first-child { display: flex; align-items: center; gap: 10px; }
+.tg-homebar small, .tg-homebar strong { display: block; }
+.tg-homebar small { color: var(--muted); font-size: 9px; text-transform: uppercase; letter-spacing: .09em; }
+.tg-homebar strong { font-size: 17px; letter-spacing: .08em; margin-top: 2px; }
+.tg-brand-mark { width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; color: white; background: var(--emerald); font: 21px Georgia, serif; }
+.tg-user { width: 38px; height: 38px; border-radius: 50%; overflow: hidden; background: var(--sand); display: grid; place-items: center; color: var(--emerald); font-weight: 800; }
+.tg-user-photo { width: 100%; height: 100%; background-size: cover; background-position: center; }
+.tg-dashboard .page-heading { align-items: flex-start; }
+.tg-dashboard .page-heading .button { width: 48px; min-width: 48px; height: 48px; padding: 0; overflow: hidden; font-size: 0; }
+.tg-dashboard .page-heading .button::before { content: "+"; font-size: 24px; }
+.tg-dashboard .filters { width: 100%; }
+.tg-dashboard .filter { flex: 1; }
+.tg-dashboard .asar-grid { grid-template-columns: 1fr; }
+.tg-dashboard .asar-card { border-radius: 20px; }
+.tg-dashboard .asar-card-bottom strong { max-width: 58%; text-align: right; font-size: 11px; }
+.tg-tabbar { position: fixed; z-index: 40; left: 10px; right: 10px; bottom: max(9px, env(safe-area-inset-bottom)); height: 66px; padding: 7px 10px; border: 1px solid rgba(32,34,31,.1); border-radius: 22px; background: color-mix(in srgb, var(--paper) 92%, transparent); backdrop-filter: blur(18px); box-shadow: 0 14px 40px rgba(35,31,25,.16); display: grid; grid-template-columns: 1fr 1fr 64px 1fr; align-items: center; }
+.tg-tabbar a { display: flex; flex-direction: column; align-items: center; gap: 3px; color: var(--muted); font-size: 9px; }
+.tg-tabbar a > span { font-size: 20px; line-height: 1; }
+.tg-tabbar a.active { color: var(--emerald); font-weight: 800; }
+.tg-tabbar .tg-create { width: 52px; height: 52px; margin: -21px auto 0; border: 4px solid var(--milk); border-radius: 50%; background: var(--emerald); color: white; display: grid; place-items: center; box-shadow: 0 8px 24px rgba(12,102,80,.3); }
+.tg-tabbar .tg-create > span { font-size: 28px; }
+.tg-profile-card { display: flex; gap: 16px; align-items: flex-start; }
+.tg-profile-avatar { flex: 0 0 58px; height: 58px; border-radius: 50%; display: grid; place-items: center; background: var(--emerald); color: white; font: 28px Georgia, serif; }
+
+@media (max-width: 680px) {
+  .telegram-miniapp .panel { padding: 22px 17px; border-radius: 20px; }
+  .telegram-miniapp .wizard-progress { margin: 20px 0 26px; }
+  .telegram-miniapp .hero-panel { border-radius: 20px; }
+  .telegram-miniapp .share-grid { gap: 12px; }
+  .telegram-miniapp .share-card { padding: 22px 18px; border-radius: 20px; }
+}

@@ -1,4 +1,3 @@
-import { AppHeader } from "../../../components/asar-ui";
-import { getChatGPTUser, chatGPTSignOutPath } from "../../chatgpt-auth";
+import { TelegramProfilePage } from "../../../components/telegram-profile";
 export const dynamic = "force-dynamic";
-export default async function ProfilePage() { const user = await getChatGPTUser(); return <div className="app-page"><AppHeader title="Профиль" /><main className="app-main wizard-shell"><div className="page-heading"><div><span className="section-kicker">Инициатор</span><h1>Профиль и приватность</h1></div></div><section className="panel"><h2>{user?.displayName ?? "Локальный демо‑профиль"}</h2><p className="panel-lead">{user?.email ?? "demo@asar.local"}</p><div className="success-banner">Asar хранит только данные, необходимые для координации. Медицинские, финансовые и семейные сведения получателя не собираются.</div>{user ? <a className="button button-secondary" href={chatGPTSignOutPath("/")}>Выйти</a> : <p className="muted">В локальном режиме используется безопасный демо‑профиль.</p>}</section></main></div>; }
+export default function ProfilePage() { return <TelegramProfilePage />; }

@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { api, copyLink } from "../lib/client";
+import { api } from "../lib/client";
+import { shareInTelegram, telegramHaptic } from "../lib/telegram";
 import { useAsar } from "../lib/use-asar";
 import { AppHeader, EmptyState, LoadingCard } from "./asar-ui";
 
@@ -15,20 +16,22 @@ export function ShareAsar({ id }: { id: string }) {
   const make = async (scope: "FULL_ASAR" | "SINGLE_REQUIREMENT", requirementId?: string) => {
     setMessage("");
     try {
-      const data = await api<{ invite: { token: string } }>(`/api/asars/${id}/invites`, { method: "POST", body: JSON.stringify({ scope, requirementId }) });
-      const url = await copyLink(`/join/${data.invite.token}`);
+      const data = await api<{ invite: { token: string; shareUrl: string } }>(`/api/asars/${id}/invites`, { method: "POST", body: JSON.stringify({ scope, requirementId }) });
+      const url = data.invite.shareUrl;
       if (scope === "FULL_ASAR") setFullLink(url); else setShortageLink(url);
-      setMessage("Ссылка создана и скопирована");
-    } catch (caught) { setMessage(caught instanceof Error ? caught.message : "Не удалось создать ссылку"); }
+      telegramHaptic("success");
+      setMessage("Приглашение готово");
+      shareInTelegram(url, scope === "FULL_ASAR" ? `Присоединяйтесь к асару «${asar?.title ?? "общее дело"}»` : `Срочно нужна помощь для асара «${asar?.title ?? "общее дело"}»`);
+    } catch (caught) { telegramHaptic("error"); setMessage(caught instanceof Error ? caught.message : "Не удалось создать ссылку"); }
   };
   if (loading) return <div className="app-page"><AppHeader /><main className="app-main"><LoadingCard /></main></div>;
   if (!asar || error) return <div className="app-page"><AppHeader /><main className="app-main"><EmptyState title="Асар не найден" text={error} /></main></div>;
   const missing = asar.requirements.filter((item) => item.claimedQuantity < item.requiredQuantity);
   return <div className="app-page"><AppHeader title="Поделиться" /><main className="app-main">
     <div className="page-heading"><div><Link className="text-link" href={`/app/asars/${id}`}>← Вернуться к асару</Link><h1>Позовите только тех,<br />кто сейчас нужен.</h1><p>{asar.title}</p></div></div>
-    {message && <div className={message.includes("скопирована") ? "success-banner" : "error-banner"}>{message}</div>}
+    {message && <div className={message.includes("готово") ? "success-banner" : "error-banner"}>{message}</div>}
     <div className="share-grid">
-      <section className="share-card"><span className="share-icon">↗</span><h2>Полная гостевая ссылка</h2><p>Показывает публичное описание и все свободные роли. Подходит для исходного круга знакомых.</p>{fullLink && <div className="link-box"><input className="input" readOnly value={fullLink} /></div>}<button className="button button-primary button-block" onClick={() => make("FULL_ASAR")}>{fullLink ? "Скопировать новую ссылку" : "Создать и скопировать"}</button></section>
+      <section className="share-card"><span className="share-icon">↗</span><h2>Пригласить в Telegram</h2><p>Откроет чат с ботом, а затем гостевую карточку со всеми свободными ролями.</p>{fullLink && <div className="link-box"><input className="input" readOnly value={fullLink} /></div>}<button className="button button-primary button-block" onClick={() => make("FULL_ASAR")}>{fullLink ? "Отправить ещё раз" : "Отправить приглашение"}</button></section>
       <section className="share-card accent"><span className="share-icon">!</span><h2>Ссылка только на нехватку</h2><p>Новый круг увидит минимум контекста и одну конкретную потребность — без лишних данных.</p>
         <div className="shortage-list">{missing.length ? missing.map((item) => <button className={`shortage-option ${selected === item.id ? "active" : ""}`} onClick={() => setSelected(item.id)} key={item.id}><span><strong>{item.title}</strong><small>Нужно ещё {item.requiredQuantity - item.claimedQuantity}</small></span><span>{item.isCritical ? "Критично" : "Доп."}</span></button>) : <p className="success-banner">Все позиции уже заняты. Ссылка понадобится, если кто-то отменит участие.</p>}</div>
         {shortageLink && <div className="link-box"><input className="input" readOnly value={shortageLink} /></div>}<button className="button button-danger button-block" disabled={!selected} onClick={() => make("SINGLE_REQUIREMENT", selected)}>Создать ссылку нехватки</button>

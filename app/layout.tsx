@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
+import Script from "next/script";
+import { TelegramBridge } from "../components/telegram-bridge";
 import "./globals.css";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -9,8 +11,8 @@ export async function generateMetadata(): Promise<Metadata> {
   const origin = `${protocol}://${host}`;
   return {
     metadataBase: new URL(origin),
-    title: { default: "Asar — готовность общего дела", template: "%s · Asar" },
-    description: "Превращаем размытые обещания в проверяемую операционную готовность.",
+    title: { default: "Asar Mini App", template: "%s · Asar" },
+    description: "Люди, ресурсы и готовность общего дела — внутри Telegram.",
     openGraph: {
       title: "Asar — общее дело без хаоса в чатах",
       description: "Риск срыва виден заранее.",
@@ -23,5 +25,5 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="ru"><body>{children}</body></html>;
+  return <html lang="ru"><body><Script src="https://telegram.org/js/telegram-web-app.js?61" strategy="afterInteractive" /><TelegramBridge />{children}</body></html>;
 }

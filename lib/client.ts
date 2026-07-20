@@ -1,5 +1,8 @@
+import { getTelegramWebApp } from "./telegram";
+
 export async function api<T>(url: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(url, { ...options, headers: { "Content-Type": "application/json", ...(options?.headers ?? {}) } });
+  const initData = getTelegramWebApp()?.initData;
+  const response = await fetch(url, { ...options, headers: { "Content-Type": "application/json", ...(initData ? { "X-Telegram-Init-Data": initData } : {}), ...(options?.headers ?? {}) } });
   const data = await response.json() as T & { message?: string };
   if (!response.ok) throw new Error(data.message || "Не удалось выполнить действие");
   return data;

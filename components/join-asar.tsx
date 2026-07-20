@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "../lib/client";
 import type { AsarView } from "../lib/types";
 import { Brand, EmptyState, formatDate, LoadingCard, StatusBadge } from "./asar-ui";
+import { getTelegramProfile, telegramHaptic } from "../lib/telegram";
 
 export function JoinAsar({ token }: { token: string }) {
   const [asar, setAsar] = useState<AsarView | null>(null);
@@ -14,12 +15,21 @@ export function JoinAsar({ token }: { token: string }) {
   const [form, setForm] = useState({ participantName: "", contactType: "TELEGRAM", contactValue: "", quantity: 1, comment: "" });
   const [busy, setBusy] = useState(false);
   const [manageToken, setManageToken] = useState("");
-  useEffect(() => { api<{ asar: AsarView }>(`/api/public/invites/${token}`).then((data) => { setAsar(data.asar); if (data.asar.requirements.length === 1) setSelected(data.asar.requirements[0].id); }).catch((caught) => setError(caught instanceof Error ? caught.message : "Приглашение недоступно")).finally(() => setLoading(false)); }, [token]);
+  useEffect(() => {
+    const profile = getTelegramProfile();
+    if (profile) queueMicrotask(() => setForm((current) => ({
+        ...current,
+        participantName: [profile.firstName, profile.lastName].filter(Boolean).join(" "),
+        contactType: "TELEGRAM",
+        contactValue: profile.username ? `@${profile.username}` : `Telegram ID ${profile.id}`,
+      })));
+    api<{ asar: AsarView }>(`/api/public/invites/${token}`).then((data) => { setAsar(data.asar); if (data.asar.requirements.length === 1) setSelected(data.asar.requirements[0].id); }).catch((caught) => setError(caught instanceof Error ? caught.message : "Приглашение недоступно")).finally(() => setLoading(false));
+  }, [token]);
   const requirement = useMemo(() => asar?.requirements.find((item) => item.id === selected), [asar, selected]);
   const submit = async () => {
     setBusy(true); setError("");
-    try { const data = await api<{ manageToken: string }>(`/api/public/invites/${token}`, { method: "POST", body: JSON.stringify({ ...form, requirementId: selected, quantity: requirement?.kind === "PERSON" ? 1 : form.quantity }) }); setManageToken(data.manageToken); }
-    catch (caught) { setError(caught instanceof Error ? caught.message : "Не удалось записаться"); }
+    try { const data = await api<{ manageToken: string }>(`/api/public/invites/${token}`, { method: "POST", body: JSON.stringify({ ...form, requirementId: selected, quantity: requirement?.kind === "PERSON" ? 1 : form.quantity }) }); telegramHaptic("success"); setManageToken(data.manageToken); }
+    catch (caught) { telegramHaptic("error"); setError(caught instanceof Error ? caught.message : "Не удалось записаться"); }
     finally { setBusy(false); }
   };
 

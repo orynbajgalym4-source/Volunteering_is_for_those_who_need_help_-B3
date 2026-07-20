@@ -1,18 +1,18 @@
-import { getChatGPTUser } from "../app/chatgpt-auth";
+import { telegramIdentityFromRequest } from "./telegram-auth.server";
 
 export type OrganizerIdentity = { email: string; displayName: string };
 
 export async function organizerFromRequest(request: Request): Promise<OrganizerIdentity | null> {
-  const user = await getChatGPTUser();
-  if (user) return { email: user.email, displayName: user.displayName };
+  const user = await telegramIdentityFromRequest(request);
+  if (user) return { email: user.ownerKey, displayName: user.displayName };
 
   const host = new URL(request.url).hostname;
   if (host === "localhost" || host === "127.0.0.1") {
-    return { email: "demo@asar.local", displayName: "Аружан" };
+    return { email: "telegram:demo", displayName: "Аружан" };
   }
   return null;
 }
 
 export function unauthorized() {
-  return Response.json({ code: "UNAUTHORIZED", message: "Войдите как инициатор" }, { status: 401 });
+  return Response.json({ code: "UNAUTHORIZED", message: "Откройте Asar через Telegram-бота" }, { status: 401 });
 }

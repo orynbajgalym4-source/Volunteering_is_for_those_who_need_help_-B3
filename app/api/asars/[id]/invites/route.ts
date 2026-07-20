@@ -1,6 +1,7 @@
 import { organizerFromRequest, unauthorized } from "../../../../../lib/auth.server";
 import { hashToken, randomToken } from "../../../../../lib/security";
 import { database, ensureDatabase, getAsarView } from "../../../../../lib/store.server";
+import { telegramInviteLink } from "../../../../../lib/telegram-bot.server";
 
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   const owner = await organizerFromRequest(request);
@@ -30,5 +31,5 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24 * 14).toISOString();
   await database().prepare("INSERT INTO invites (id, asar_id, requirement_id, scope, token_hash, expires_at) VALUES (?, ?, ?, ?, ?, ?)")
     .bind(crypto.randomUUID(), id, scope === "SINGLE_REQUIREMENT" ? payload.requirementId : null, scope, await hashToken(token), expiresAt).run();
-  return Response.json({ invite: { token, scope, requirementId: scope === "SINGLE_REQUIREMENT" ? payload.requirementId : null, expiresAt } }, { status: 201 });
+  return Response.json({ invite: { token, scope, requirementId: scope === "SINGLE_REQUIREMENT" ? payload.requirementId : null, expiresAt, shareUrl: telegramInviteLink(token) } }, { status: 201 });
 }
