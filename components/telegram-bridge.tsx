@@ -28,6 +28,8 @@ export function TelegramBridge() {
     const goBack = () => {
       const nestedAsar = pathname.match(/^\/app\/asars\/([^/]+)\/(?:share|day|complete)$/);
       if (nestedAsar) return router.push(`/app/asars/${nestedAsar[1]}`);
+      const groupMember = pathname.match(/^\/app\/groups\/([^/]+)\/members\/[^/]+$/);
+      if (groupMember) return router.push(`/app/groups/${groupMember[1]}`);
       if (pathname === "/app/asars/new" || /^\/app\/asars\/[^/]+$/.test(pathname)) return router.push("/app/asars");
       if (pathname === "/app/groups/new" || /^\/app\/groups\/[^/]+$/.test(pathname)) return router.push("/app/profile");
       if (pathname === "/app/profile") return router.push("/");
