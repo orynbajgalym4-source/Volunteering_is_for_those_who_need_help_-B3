@@ -76,9 +76,10 @@ export async function POST(request: Request, context: { params: Promise<{ token:
 
   const manageToken = randomToken();
   const contactHash = await hashToken(normalizeContact(payload.contactValue));
+  const commitmentId = crypto.randomUUID();
   try {
     const db = database();
-    const common = [crypto.randomUUID(), requirementId, payload.participantName.trim(), payload.contactType === "PHONE" ? "PHONE" : "TELEGRAM", payload.contactValue.trim(), contactHash, quantity, await hashToken(manageToken)] as const;
+    const common = [commitmentId, requirementId, payload.participantName.trim(), payload.contactType === "PHONE" ? "PHONE" : "TELEGRAM", payload.contactValue.trim(), contactHash, quantity, await hashToken(manageToken)] as const;
     let result;
     try {
       result = await db.prepare(`INSERT INTO commitments
@@ -117,6 +118,11 @@ export async function POST(request: Request, context: { params: Promise<{ token:
       VALUES (?, ?, ?, ?, ?, 'MEMBER')
       ON CONFLICT(group_id, member_key) DO UPDATE SET display_name = excluded.display_name, username = COALESCE(excluded.username, group_members.username)`)
       .bind(crypto.randomUUID(), asar.group_id, memberKey, telegramUser?.displayName ?? payload.participantName.trim(), username).run();
+    const groupMember = await database().prepare("SELECT id FROM group_members WHERE group_id = ? AND member_key = ?")
+      .bind(asar.group_id, memberKey).first<{ id: string }>();
+    if (groupMember) {
+      await database().prepare("UPDATE commitments SET group_member_id = ? WHERE id = ?").bind(groupMember.id, commitmentId).run();
+    }
   }
   return Response.json({
     commitment: { status: "CLAIMED", requirementId },

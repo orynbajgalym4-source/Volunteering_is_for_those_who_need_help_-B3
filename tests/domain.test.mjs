@@ -5,6 +5,7 @@ import { validateTelegramInitDataWithToken } from "../lib/telegram-validation.ts
 import { isAsarCategory, isRequirementType, normalizeRequirementType } from "../lib/catalog.ts";
 import { createTelegramLaunchToken, createTelegramSession, validateTelegramLaunchToken, validateTelegramSession } from "../lib/telegram-session.ts";
 import { createHmac } from "node:crypto";
+import { normalizeMemberOffers } from "../lib/member-offers.ts";
 
 function requirement(overrides = {}) {
   return { id: "r1", type: "SPECIALIST", customTitle: "Водитель", description: "", requiredQuantity: 1, isCritical: true, claimedQuantity: 0, confirmedQuantity: 0, ...overrides };
@@ -45,6 +46,14 @@ test("terminal lifecycle states cannot reopen", () => {
   assert.equal(canTransition("DRAFT", "PUBLISHED"), true);
   assert.equal(canTransition("COMPLETED", "PUBLISHED"), false);
   assert.equal(canTransition("CANCELLED", "IN_PROGRESS"), false);
+  assert.equal(canTransition("EXPIRED", "COMPLETED"), true);
+});
+
+test("member offers stay fixed and receive-only is exclusive", () => {
+  assert.deepEqual(normalizeMemberOffers(["ADVICE", "TOOL", "ADVICE"]), ["ADVICE", "TOOL"]);
+  assert.deepEqual(normalizeMemberOffers(["RECEIVE_ONLY"]), ["RECEIVE_ONLY"]);
+  assert.equal(normalizeMemberOffers(["RECEIVE_ONLY", "ADVICE"]), null);
+  assert.equal(normalizeMemberOffers(["ремонт" ]), null);
 });
 
 test("recruitment stays open while an asar is in progress", () => {

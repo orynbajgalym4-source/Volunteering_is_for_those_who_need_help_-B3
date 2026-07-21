@@ -1,5 +1,6 @@
 import type { Readiness, RequirementView } from "./domain";
 import type { AsarCategory } from "./catalog";
+import type { MemberOffer } from "./member-offers";
 
 export type GroupSummary = {
   id: string;
@@ -7,6 +8,8 @@ export type GroupSummary = {
   description: string;
   photoUrl?: string;
   role?: "OWNER" | "MEMBER";
+  currentMemberId?: string;
+  myOffers?: MemberOffer[];
   memberCount: number;
   asarCount: number;
 };
@@ -17,6 +20,10 @@ export type GroupMemberView = {
   username?: string;
   role: "OWNER" | "MEMBER";
   joinedAt: string;
+  offers: MemberOffer[];
+  completedAsarCount: number;
+  lastInvitedAt?: string;
+  canReceiveBotInvite: boolean;
 };
 
 export type GroupView = GroupSummary & {
@@ -40,4 +47,11 @@ export type AsarView = {
   requirements: RequirementView[];
   readiness: Readiness;
   inviteScope?: "FULL_ASAR" | "SINGLE_REQUIREMENT";
+  followUpOffers?: Array<{ memberId: string; displayName: string; offers: MemberOffer[] }>;
+};
+
+export type GroupMemberProfile = GroupMemberView & {
+  isSelf: boolean;
+  history: AsarView[];
+  invitableAsars: Array<{ id: string; title: string; startsAt: string }>;
 };

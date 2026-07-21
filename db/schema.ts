@@ -73,6 +73,7 @@ export const commitments = sqliteTable("commitments", {
   contactType: text("contact_type").notNull(),
   contactValue: text("contact_value").notNull(),
   normalizedContactHash: text("normalized_contact_hash").notNull(),
+  groupMemberId: text("group_member_id").references(() => groupMembers.id, { onDelete: "set null" }),
   quantity: integer("quantity").notNull().default(1),
   status: text("status").notNull().default("CLAIMED"),
   manageTokenHash: text("manage_token_hash").notNull(),
@@ -87,6 +88,40 @@ export const commitments = sqliteTable("commitments", {
   uniqueIndex("commitments_manage_hash_idx").on(table.manageTokenHash),
   uniqueIndex("commitments_contact_requirement_idx").on(table.requirementId, table.normalizedContactHash),
   index("commitments_requirement_idx").on(table.requirementId),
+  index("commitments_group_member_idx").on(table.groupMemberId),
+]);
+
+export const memberOffers = sqliteTable("member_offers", {
+  id: text("id").primaryKey(),
+  groupMemberId: text("group_member_id").notNull().references(() => groupMembers.id, { onDelete: "cascade" }),
+  kind: text("kind").notNull(),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("member_offers_member_kind_idx").on(table.groupMemberId, table.kind),
+  index("member_offers_member_idx").on(table.groupMemberId),
+]);
+
+export const asarOfferSnapshots = sqliteTable("asar_offer_snapshots", {
+  id: text("id").primaryKey(),
+  asarId: text("asar_id").notNull().references(() => asars.id, { onDelete: "cascade" }),
+  groupMemberId: text("group_member_id").notNull().references(() => groupMembers.id, { onDelete: "cascade" }),
+  kind: text("kind").notNull(),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("asar_offer_snapshots_asar_member_kind_idx").on(table.asarId, table.groupMemberId, table.kind),
+  index("asar_offer_snapshots_asar_idx").on(table.asarId),
+]);
+
+export const groupMemberInvitations = sqliteTable("group_member_invitations", {
+  id: text("id").primaryKey(),
+  groupId: text("group_id").notNull().references(() => groups.id, { onDelete: "cascade" }),
+  asarId: text("asar_id").notNull().references(() => asars.id, { onDelete: "cascade" }),
+  groupMemberId: text("group_member_id").notNull().references(() => groupMembers.id, { onDelete: "cascade" }),
+  invitedByKey: text("invited_by_key").notNull(),
+  invitedAt: text("invited_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  index("group_member_invitations_member_idx").on(table.groupMemberId, table.invitedAt),
+  index("group_member_invitations_asar_idx").on(table.asarId),
 ]);
 
 export const userPreferences = sqliteTable("user_preferences", {
