@@ -10,7 +10,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
   const { id } = await context.params;
   await ensureDatabase();
   const db = database();
-  const membership = await db.prepare("SELECT role FROM group_members WHERE group_id = ? AND member_key = ?").bind(id, owner.email).first();
+  const membership = await db.prepare("SELECT role FROM group_members WHERE group_id = ? AND member_key = ?").bind(id, owner.email).first<{ role: "OWNER" | "MEMBER" }>();
   if (!membership) return Response.json({ code: "GROUP_FORBIDDEN", message: "Круг недоступен" }, { status: 403 });
   const group = await getGroupSummary(id, owner.email);
   if (!group) return Response.json({ code: "NOT_FOUND", message: "Круг не найден" }, { status: 404 });
@@ -25,8 +25,11 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       WHERE a.group_id = ? AND a.lifecycle_status = 'COMPLETED' AND COALESCE(a.outcome, 'FULL') != 'CANCELLED'
         AND (a.owner_email = ? OR (c.group_member_id = ? AND c.status = 'ATTENDED'))`)
       .bind(id, row.member_key, row.id).first<{ total: number }>();
-    const invitation = await db.prepare("SELECT MAX(invited_at) AS invited_at FROM group_member_invitations WHERE group_member_id = ?")
-      .bind(row.id).first<{ invited_at: string | null }>();
+    const canViewInvitationRecency = membership.role === "OWNER" || row.member_key === owner.email;
+    const invitation = canViewInvitationRecency
+      ? await db.prepare("SELECT MAX(invited_at) AS invited_at FROM group_member_invitations WHERE group_member_id = ?")
+        .bind(row.id).first<{ invited_at: string | null }>()
+      : null;
     return {
       id: row.id,
       displayName: row.display_name,
@@ -36,6 +39,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       offers: await getMemberOffers(row.id),
       completedAsarCount: Number(count?.total ?? 0),
       ...(invitation?.invited_at ? { lastInvitedAt: invitation.invited_at } : {}),
+      canViewInvitationRecency,
       canReceiveBotInvite: /^telegram:\d+$/.test(row.member_key),
     };
   }));

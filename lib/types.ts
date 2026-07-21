@@ -23,6 +23,7 @@ export type GroupMemberView = {
   offers: MemberOffer[];
   completedAsarCount: number;
   lastInvitedAt?: string;
+  canViewInvitationRecency?: boolean;
   canReceiveBotInvite: boolean;
 };
 
@@ -52,6 +53,14 @@ export type AsarView = {
 
 export type GroupMemberProfile = GroupMemberView & {
   isSelf: boolean;
+  group: GroupSummary;
   history: AsarView[];
   invitableAsars: Array<{ id: string; title: string; startsAt: string }>;
+};
+
+export type SelfProfileView = {
+  displayName: string;
+  username?: string;
+  groups: GroupSummary[];
+  history: AsarView[];
 };

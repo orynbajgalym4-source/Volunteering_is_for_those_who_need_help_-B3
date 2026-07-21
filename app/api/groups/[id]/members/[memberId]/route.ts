@@ -1,7 +1,7 @@
 import { organizerFromRequest, unauthorized } from "../../../../../../lib/auth.server";
 import { effectiveLifecycleStatus } from "../../../../../../lib/domain";
 import { normalizeMemberOffers } from "../../../../../../lib/member-offers";
-import { database, ensureDatabase, getAsarView, getMemberOffers } from "../../../../../../lib/store.server";
+import { database, ensureDatabase, getAsarView, getGroupSummary, getMemberOffers } from "../../../../../../lib/store.server";
 import type { GroupMemberProfile } from "../../../../../../lib/types";
 
 type MemberRow = {
@@ -18,8 +18,8 @@ async function contextFor(request: Request, groupId: string, memberId: string) {
   if (!viewer) return { error: unauthorized() };
   await ensureDatabase();
   const db = database();
-  const viewerMembership = await db.prepare("SELECT id FROM group_members WHERE group_id = ? AND member_key = ?")
-    .bind(groupId, viewer.email).first<{ id: string }>();
+  const viewerMembership = await db.prepare("SELECT id, role FROM group_members WHERE group_id = ? AND member_key = ?")
+    .bind(groupId, viewer.email).first<{ id: string; role: "OWNER" | "MEMBER" }>();
   if (!viewerMembership) return { error: Response.json({ code: "GROUP_FORBIDDEN", message: "Круг недоступен" }, { status: 403 }) };
   const member = await db.prepare("SELECT id, member_key, display_name, username, role, joined_at FROM group_members WHERE id = ? AND group_id = ?")
     .bind(memberId, groupId).first<MemberRow>();
@@ -31,7 +31,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
   const { id, memberId } = await context.params;
   const access = await contextFor(request, id, memberId);
   if (access.error) return access.error;
-  const { viewer, member, db } = access;
+  const { viewer, viewerMembership, member, db } = access;
 
   const historyRows = await db.prepare(`SELECT DISTINCT a.id, a.starts_at FROM asars a
     LEFT JOIN requirements r ON r.asar_id = a.id
@@ -49,6 +49,10 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
   const invitableAsars = candidateRows.results
     .filter((asar) => ["PUBLISHED", "IN_PROGRESS"].includes(effectiveLifecycleStatus(asar.lifecycle_status, asar.starts_at)))
     .map((asar) => ({ id: asar.id, title: asar.title, startsAt: asar.starts_at }));
+  const group = await getGroupSummary(id, viewer.email);
+  if (!group) return Response.json({ code: "NOT_FOUND", message: "Круг не найден" }, { status: 404 });
+  const isSelf = member.member_key === viewer.email;
+  const canViewInvitationRecency = isSelf || viewerMembership.role === "OWNER";
 
   const profile: GroupMemberProfile = {
     id: member.id,
@@ -58,9 +62,11 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     joinedAt: member.joined_at,
     offers: await getMemberOffers(member.id),
     completedAsarCount: history.length,
-    ...(invitation?.invited_at ? { lastInvitedAt: invitation.invited_at } : {}),
+    ...(canViewInvitationRecency && invitation?.invited_at ? { lastInvitedAt: invitation.invited_at } : {}),
+    canViewInvitationRecency,
     canReceiveBotInvite: /^telegram:\d+$/.test(member.member_key),
-    isSelf: member.member_key === viewer.email,
+    isSelf,
+    group,
     history,
     invitableAsars,
   };
