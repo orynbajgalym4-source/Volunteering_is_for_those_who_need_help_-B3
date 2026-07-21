@@ -18,6 +18,7 @@ export const groupMembers = sqliteTable("group_members", {
   displayName: text("display_name").notNull(),
   username: text("username"),
   role: text("role").notNull().default("MEMBER"),
+  membershipSource: text("membership_source").notNull().default("EXPLICIT"),
   joinedAt: text("joined_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
   uniqueIndex("group_members_group_member_idx").on(table.groupId, table.memberKey),
@@ -33,6 +34,7 @@ export const asars = sqliteTable("asars", {
   title: text("title").notNull(),
   description: text("description").notNull().default(""),
   startsAt: text("starts_at").notNull(),
+  timeMode: text("time_mode").notNull().default("EXACT"),
   publicLocation: text("public_location").notNull(),
   exactAddress: text("exact_address").notNull(),
   lifecycleStatus: text("lifecycle_status").notNull().default("DRAFT"),
@@ -73,6 +75,7 @@ export const commitments = sqliteTable("commitments", {
   contactType: text("contact_type").notNull(),
   contactValue: text("contact_value").notNull(),
   normalizedContactHash: text("normalized_contact_hash").notNull(),
+  participantKey: text("participant_key"),
   groupMemberId: text("group_member_id").references(() => groupMembers.id, { onDelete: "set null" }),
   quantity: integer("quantity").notNull().default(1),
   status: text("status").notNull().default("CLAIMED"),
@@ -88,6 +91,7 @@ export const commitments = sqliteTable("commitments", {
   uniqueIndex("commitments_manage_hash_idx").on(table.manageTokenHash),
   uniqueIndex("commitments_contact_requirement_idx").on(table.requirementId, table.normalizedContactHash),
   index("commitments_requirement_idx").on(table.requirementId),
+  index("commitments_participant_idx").on(table.participantKey),
   index("commitments_group_member_idx").on(table.groupMemberId),
 ]);
 
@@ -99,6 +103,16 @@ export const memberOffers = sqliteTable("member_offers", {
 }, (table) => [
   uniqueIndex("member_offers_member_kind_idx").on(table.groupMemberId, table.kind),
   index("member_offers_member_idx").on(table.groupMemberId),
+]);
+
+export const profileOffers = sqliteTable("profile_offers", {
+  id: text("id").primaryKey(),
+  memberKey: text("member_key").notNull(),
+  kind: text("kind").notNull(),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("profile_offers_member_kind_idx").on(table.memberKey, table.kind),
+  index("profile_offers_member_idx").on(table.memberKey),
 ]);
 
 export const asarOfferSnapshots = sqliteTable("asar_offer_snapshots", {

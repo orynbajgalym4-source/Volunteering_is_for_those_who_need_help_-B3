@@ -11,10 +11,10 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   const payload = await request.json() as { asarId?: string };
   await ensureDatabase();
   const db = database();
-  const viewerMembership = await db.prepare("SELECT id FROM group_members WHERE group_id = ? AND member_key = ?")
+  const viewerMembership = await db.prepare("SELECT id FROM group_members WHERE group_id = ? AND member_key = ? AND membership_source = 'EXPLICIT'")
     .bind(id, viewer.email).first();
   if (!viewerMembership) return Response.json({ code: "GROUP_FORBIDDEN", message: "Круг недоступен" }, { status: 403 });
-  const member = await db.prepare("SELECT id, member_key, display_name FROM group_members WHERE id = ? AND group_id = ?")
+  const member = await db.prepare("SELECT id, member_key, display_name FROM group_members WHERE id = ? AND group_id = ? AND membership_source = 'EXPLICIT'")
     .bind(memberId, id).first<{ id: string; member_key: string; display_name: string }>();
   if (!member) return Response.json({ code: "NOT_FOUND", message: "Участник не найден" }, { status: 404 });
   const asar = await db.prepare("SELECT id, title, starts_at, lifecycle_status FROM asars WHERE id = ? AND group_id = ? AND owner_email = ?")

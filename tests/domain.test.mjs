@@ -6,6 +6,7 @@ import { isAsarCategory, isRequirementType, normalizeRequirementType } from "../
 import { createTelegramLaunchToken, createTelegramSession, validateTelegramLaunchToken, validateTelegramSession } from "../lib/telegram-session.ts";
 import { createHmac } from "node:crypto";
 import { normalizeMemberOffers } from "../lib/member-offers.ts";
+import { buildScheduleStart, formatAsarSchedule, scheduleIsFuture, storedScheduleIsFuture } from "../lib/schedule.ts";
 
 function requirement(overrides = {}) {
   return { id: "r1", type: "SPECIALIST", customTitle: "Водитель", description: "", requiredQuantity: 1, isCritical: true, claimedQuantity: 0, confirmedQuantity: 0, ...overrides };
@@ -106,4 +107,18 @@ test("a signed bot launch token works without Telegram initData", async () => {
   assert.deepEqual(await validateTelegramLaunchToken(token, "bot-secret", 2_030), identity);
   assert.equal(await validateTelegramLaunchToken(token, "wrong-secret", 2_030), null);
   assert.equal(await validateTelegramSession(token, "bot-secret", 2_030), null);
+});
+
+test("flexible schedules keep a date without inventing exact minutes", () => {
+  const value = buildScheduleStart("2026-07-25", "FLEXIBLE", "");
+  assert.match(value, /^2026-07-2[45]T/);
+  assert.match(formatAsarSchedule(value, "FLEXIBLE", true), /время уточняется/);
+  assert.equal(scheduleIsFuture("2026-07-25", "FLEXIBLE", "", new Date("2026-07-25T10:00:00Z").getTime()), true);
+});
+
+test("exact and flexible stored schedules use different future windows", () => {
+  const start = "2026-07-25T09:00:00.000Z";
+  const now = new Date("2026-07-25T10:00:00.000Z").getTime();
+  assert.equal(storedScheduleIsFuture(start, "EXACT", now), false);
+  assert.equal(storedScheduleIsFuture(start, "MORNING", now), true);
 });

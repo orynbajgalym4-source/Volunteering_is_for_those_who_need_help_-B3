@@ -10,6 +10,7 @@ import { getTelegramWebApp } from "../lib/telegram";
 import { AppHeader, EmptyState, formatDate, LoadingCard, StatusBadge } from "./asar-ui";
 import { GroupAvatar } from "./group-ui";
 import { OfferChips, OfferSelector } from "./member-offers";
+import { formatAsarSchedule } from "../lib/schedule";
 
 function invitationRecency(value?: string) {
   if (!value) return "Через Asar ещё не приглашали";
@@ -22,7 +23,7 @@ function invitationRecency(value?: string) {
 function ProfileHistory({ history, showCircle }: { history: AsarView[]; showCircle?: boolean }) {
   if (!history.length) return <EmptyState title="История пока пуста" text="Здесь появятся только дела, в которых человек действительно участвовал или был организатором." />;
   return <div className="asar-grid profile-history-grid">{history.map((asar) => <Link className="asar-card profile-history-card" href={`/app/asars/${asar.id}`} key={asar.id}>
-    <div className="asar-card-top"><StatusBadge state="COMPLETED" /><span className="muted">{formatDate(asar.startsAt)}</span></div>
+    <div className="asar-card-top"><StatusBadge state="COMPLETED" /><span className="muted">{formatAsarSchedule(asar.startsAt, asar.timeMode)}</span></div>
     {showCircle && asar.group && <span className="profile-history-circle">{asar.group.name}</span>}
     <h2>{asar.title}</h2>
     <p>{asar.outcome === "PARTIAL" ? "Выполнено частично" : "Выполнено полностью"}</p>
@@ -79,6 +80,7 @@ export function UnifiedProfilePage({ groupId, memberId }: { groupId?: string; me
     api<{ profile: SelfProfileView }>("/api/profile")
       .then((data) => {
         setSelfProfile(data.profile);
+        setDraftOffers(data.profile.offers);
         const requestedCircle = new URLSearchParams(window.location.search).get("circle") ?? "";
         setSelectedGroupId(data.profile.groups.some((group) => group.id === requestedCircle) ? requestedCircle : "");
       })
@@ -106,13 +108,13 @@ export function UnifiedProfilePage({ groupId, memberId }: { groupId?: string; me
   };
 
   const saveOffers = async () => {
-    if (!member) return;
+    if (!isSelf) return;
     setBusy("save"); setMessage("");
     try {
-      const data = await api<{ offers: MemberOffer[] }>(`/api/groups/${member.group.id}/members/${member.id}`, { method: "PATCH", body: JSON.stringify({ offers: draftOffers }) });
+      const data = await api<{ offers: MemberOffer[] }>("/api/profile", { method: "PATCH", body: JSON.stringify({ offers: draftOffers }) });
       setMember((current) => current ? { ...current, offers: data.offers } : current);
-      setSelfProfile((current) => current ? { ...current, groups: current.groups.map((group) => group.id === member.group.id ? { ...group, myOffers: data.offers } : group) } : current);
-      setEditing(false); setMessage("Профиль в круге обновлён.");
+      setSelfProfile((current) => current ? { ...current, offers: data.offers } : current);
+      setEditing(false); setMessage("Профиль обновлён.");
     } catch (caught) { setMessage(caught instanceof Error ? caught.message : "Не удалось сохранить выбор"); }
     finally { setBusy(""); }
   };
@@ -163,11 +165,12 @@ export function UnifiedProfilePage({ groupId, memberId }: { groupId?: string; me
 
     {globalMode && selfProfile ? <>
       <section className="profile-summary-grid"><div><strong>{selfProfile.groups.length}</strong><span>кругов</span></div><div><strong>{selfProfile.history.length}</strong><span>состоявшихся дел</span></div></section>
-      <section className="section-block"><div className="section-heading"><div><span className="section-kicker">Ваши круги</span><h2>Круги</h2></div><Link className="button button-secondary" href="/app/groups/new">+ Создать</Link></div>{selfProfile.groups.length ? <div className="profile-circle-list">{selfProfile.groups.map((group) => <button type="button" className="profile-circle-card" onClick={() => selectContext(group.id)} key={group.id}><GroupAvatar group={group} /><span><strong>{group.name}</strong><small>{group.role === "OWNER" ? "Организатор" : "Участник"} · {group.memberCount} участников</small><OfferChips offers={group.myOffers ?? []} limit={2} /></span><i>›</i></button>)}</div> : <EmptyState title="Кругов пока нет" text="Создайте постоянный круг людей для будущих общих дел." action={<Link className="button button-primary" href="/app/groups/new">Создать первый круг</Link>} />}</section>
+      <section className="panel profile-offers-panel"><div className="section-heading"><div><span className="section-kicker">О вас</span><h2>Чем можете помочь</h2></div>{!editing && <button className="button button-secondary" onClick={() => { setDraftOffers(selfProfile.offers); setEditing(true); }}>Изменить</button>}</div><p className="panel-lead">Один общий набор возможностей для всех кругов. В круге показывается только ваше членство и история дел.</p>{editing ? <><OfferSelector value={draftOffers} onChange={setDraftOffers} /><div className="profile-edit-actions"><button className="button button-secondary" onClick={() => setEditing(false)}>Отмена</button><button className="button button-primary" disabled={busy === "save"} onClick={() => void saveOffers()}>{busy === "save" ? "Сохраняем…" : "Сохранить"}</button></div></> : <OfferChips offers={selfProfile.offers} />}</section>
+      <section className="section-block"><div className="section-heading"><div><span className="section-kicker">Ваши круги</span><h2>Круги</h2></div><Link className="button button-secondary" href="/app/groups/new">+ Создать</Link></div>{selfProfile.groups.length ? <div className="profile-circle-list">{selfProfile.groups.map((group) => <button type="button" className="profile-circle-card" onClick={() => selectContext(group.id)} key={group.id}><GroupAvatar group={group} /><span><strong>{group.name}</strong><small>{group.role === "OWNER" ? "Организатор" : "Участник"} · {group.memberCount} участников</small></span><i>›</i></button>)}</div> : <EmptyState title="Кругов пока нет" text="Создайте постоянный круг людей для будущих общих дел." action={<Link className="button button-primary" href="/app/groups/new">Создать первый круг</Link>} />}</section>
       <section className="section-block"><div className="section-heading"><div><span className="section-kicker">История участия</span><h2>Состоявшиеся асары</h2></div></div><ProfileHistory history={history} showCircle /></section>
       <details className="profile-settings"><summary><span><small>Настройки</small><strong>Уведомления от бота</strong></span><em className={writeAccess ? "enabled" : ""}>{notificationsLoading ? "Проверяем…" : writeAccess ? "Включены" : "Выключены"}</em></summary><div className="profile-settings-body"><p>Бот предупредит, если критический участник отменил участие или снова появилась нехватка.</p>{notificationMessage && <div className={writeAccess ? "success-banner" : "error-banner"}>{notificationMessage}</div>}{!notificationsLoading && !writeAccess && <button className="button button-primary" onClick={requestMessages}>Включить уведомления</button>}<small>Asar хранит только данные, необходимые для координации.</small></div></details>
     </> : contextPending ? <LoadingCard text="Открываем профиль в круге…" /> : member ? <>
-      <section className="panel profile-offers-panel"><div className="section-heading"><div><span className="section-kicker">В круге «{member.group.name}»</span><h2>С чем можно обратиться</h2></div>{member.isSelf && !editing && <button className="button button-secondary" onClick={() => { setDraftOffers(member.offers); setEditing(true); }}>Изменить</button>}</div>{editing ? <><OfferSelector value={draftOffers} onChange={setDraftOffers} /><div className="profile-edit-actions"><button className="button button-secondary" onClick={() => setEditing(false)}>Отмена</button><button className="button button-primary" disabled={busy === "save"} onClick={() => void saveOffers()}>{busy === "save" ? "Сохраняем…" : "Сохранить"}</button></div></> : <OfferChips offers={member.offers} />}</section>
+      <section className="panel profile-offers-panel"><div className="section-heading"><div><span className="section-kicker">Профиль человека</span><h2>Чем может помочь</h2></div>{member.isSelf && !editing && <button className="button button-secondary" onClick={() => { setDraftOffers(member.offers); setEditing(true); }}>Изменить</button>}</div><p className="panel-lead">Эти возможности принадлежат человеку и одинаковы во всех его кругах.</p>{editing ? <><OfferSelector value={draftOffers} onChange={setDraftOffers} /><div className="profile-edit-actions"><button className="button button-secondary" onClick={() => setEditing(false)}>Отмена</button><button className="button button-primary" disabled={busy === "save"} onClick={() => void saveOffers()}>{busy === "save" ? "Сохраняем…" : "Сохранить"}</button></div></> : <OfferChips offers={member.offers} />}</section>
       {!member.isSelf && <section className="panel invite-member-panel"><span className="section-kicker">Личное приглашение</span><h2>Позвать в асар</h2>{member.canViewInvitationRecency && <p className="profile-invite-recency">{invitationRecency(member.lastInvitedAt)}</p>}<p className="panel-lead">Выберите одно активное дело этого круга. Asar сохранит приглашение только после успешной отправки ботом.</p>{member.invitableAsars.length ? <><label className="field"><span className="field-label">Асар для приглашения</span><select className="input" value={selectedAsar} onChange={(event) => setSelectedAsar(event.target.value)}>{member.invitableAsars.map((asar) => <option value={asar.id} key={asar.id}>{asar.title} · {formatDate(asar.startsAt)}</option>)}</select></label><button className="button button-primary button-block" disabled={!member.canReceiveBotInvite || busy === "invite"} onClick={() => void invite()}>{busy === "invite" ? "Отправляем…" : "Пригласить через бота"}</button>{!member.canReceiveBotInvite && <small className="field-hint">Участник ещё не подключил свой Telegram-профиль к Asar.</small>}</> : <EmptyState title="Нет активного асара для приглашения" text="Сначала опубликуйте асар в этом круге." />}</section>}
       <section className="section-block"><div className="section-heading"><div><span className="section-kicker">История участия</span><h2>Состоявшиеся асары</h2></div></div><ProfileHistory history={history} /></section>
     </> : <EmptyState title="Профиль в круге недоступен" text={error || "Участник не найден."} />}

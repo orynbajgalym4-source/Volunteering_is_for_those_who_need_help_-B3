@@ -24,6 +24,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   if (target === "PUBLISHED" && (!current.requirements.length || !current.requirements.some((item) => item.isCritical))) {
     return Response.json({ code: "PUBLISH_REQUIREMENTS", message: "Для публикации нужна критическая потребность" }, { status: 409 });
   }
+  if (target === "IN_PROGRESS" && new Date(current.startsAt).getTime() > Date.now() && current.readiness.state !== "READY") {
+    return Response.json({ code: "START_TOO_EARLY", message: "До назначенного времени начать можно, когда все критические роли подтверждены" }, { status: 409 });
+  }
   if (!canTransition(current.lifecycleStatus as LifecycleStatus, target)) {
     return Response.json({ code: "INVALID_TRANSITION", message: "Этот переход состояния недоступен" }, { status: 409 });
   }
@@ -31,17 +34,19 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   const db = database();
   const statements = [db.prepare("UPDATE asars SET lifecycle_status = ?, outcome = ?, outcome_note = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND owner_email = ?")
     .bind(target, target === "COMPLETED" ? payload.outcome : null, target === "COMPLETED" ? payload.note?.trim() ?? "" : null, id, owner.email)];
-  if (target === "COMPLETED" && offers !== undefined && current.groupId) {
-    const member = await db.prepare("SELECT id FROM group_members WHERE group_id = ? AND member_key = ?")
-      .bind(current.groupId, owner.email).first<{ id: string }>();
+  if (target === "COMPLETED" && offers !== undefined) {
+    statements.push(
+      db.prepare("DELETE FROM profile_offers WHERE member_key = ?").bind(owner.email),
+      ...offers.map((kind) => db.prepare("INSERT INTO profile_offers (id, member_key, kind) VALUES (?, ?, ?)")
+        .bind(crypto.randomUUID(), owner.email, kind)),
+    );
+    const member = current.groupId ? await db.prepare("SELECT id FROM group_members WHERE group_id = ? AND member_key = ? AND membership_source = 'EXPLICIT'")
+      .bind(current.groupId, owner.email).first<{ id: string }>() : null;
     if (member) {
       statements.push(
-        db.prepare("DELETE FROM member_offers WHERE group_member_id = ?").bind(member.id),
         db.prepare("DELETE FROM asar_offer_snapshots WHERE asar_id = ? AND group_member_id = ?").bind(id, member.id),
-        ...offers.flatMap((kind) => [
-          db.prepare("INSERT INTO member_offers (id, group_member_id, kind) VALUES (?, ?, ?)").bind(crypto.randomUUID(), member.id, kind),
-          db.prepare("INSERT INTO asar_offer_snapshots (id, asar_id, group_member_id, kind) VALUES (?, ?, ?, ?)").bind(crypto.randomUUID(), id, member.id, kind),
-        ]),
+        ...offers.map((kind) => db.prepare("INSERT INTO asar_offer_snapshots (id, asar_id, group_member_id, kind) VALUES (?, ?, ?, ?)")
+          .bind(crypto.randomUUID(), id, member.id, kind)),
       );
     }
   }

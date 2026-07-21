@@ -2,6 +2,7 @@ import { calculateReadiness } from "../../../lib/domain";
 import { isAsarCategory, isRequirementType } from "../../../lib/catalog";
 import { organizerFromRequest, unauthorized } from "../../../lib/auth.server";
 import { database, ensureDatabase, getAsarView, getGroupSummary, getRequirements, mapAsar } from "../../../lib/store.server";
+import { isAsarTimeMode, storedScheduleIsFuture } from "../../../lib/schedule";
 
 export async function GET(request: Request) {
   const owner = await organizerFromRequest(request);
@@ -21,7 +22,7 @@ export async function POST(request: Request) {
   const owner = await organizerFromRequest(request);
   if (!owner) return unauthorized();
   const payload = await request.json() as {
-    groupId?: string; category?: string; title?: string; description?: string; startsAt?: string; publicLocation?: string; exactAddress?: string;
+    groupId?: string; category?: string; title?: string; description?: string; startsAt?: string; timeMode?: string; publicLocation?: string; exactAddress?: string;
     beneficiaryConsentConfirmed?: boolean;
     requirements?: Array<{ type?: string; customTitle?: string; description?: string; requiredQuantity?: number; isCritical?: boolean }>;
   };
@@ -29,10 +30,11 @@ export async function POST(request: Request) {
   const startsAt = payload.startsAt?.trim() ?? "";
   const requirements = payload.requirements ?? [];
   const groupId = payload.groupId?.trim() ?? "";
+  const timeMode = isAsarTimeMode(payload.timeMode) ? payload.timeMode : "EXACT";
   if (!groupId) return Response.json({ code: "GROUP_REQUIRED", message: "Выберите или создайте круг" }, { status: 400 });
   if (!title || !startsAt) return Response.json({ code: "INVALID_ASAR", message: "Укажите название и дату" }, { status: 400 });
-  if (!Number.isFinite(new Date(startsAt).getTime()) || new Date(startsAt).getTime() <= Date.now()) {
-    return Response.json({ code: "INVALID_START_TIME", message: "Выберите будущую дату и время" }, { status: 400 });
+  if (!storedScheduleIsFuture(startsAt, timeMode)) {
+    return Response.json({ code: "INVALID_START_TIME", message: "Выберите будущую дату или период" }, { status: 400 });
   }
   if (!isAsarCategory(payload.category)) return Response.json({ code: "INVALID_CATEGORY", message: "Выберите одну из категорий асара" }, { status: 400 });
   if (!payload.beneficiaryConsentConfirmed) return Response.json({ code: "CONSENT_REQUIRED", message: "Подтвердите согласие получателя помощи" }, { status: 400 });
@@ -45,13 +47,13 @@ export async function POST(request: Request) {
 
   await ensureDatabase();
   const db = database();
-  const membership = await db.prepare("SELECT role FROM group_members WHERE group_id = ? AND member_key = ?").bind(groupId, owner.email).first();
+  const membership = await db.prepare("SELECT role FROM group_members WHERE group_id = ? AND member_key = ? AND membership_source = 'EXPLICIT'").bind(groupId, owner.email).first();
   if (!membership) return Response.json({ code: "GROUP_FORBIDDEN", message: "Вы не состоите в этом круге" }, { status: 403 });
   const asarId = crypto.randomUUID();
   const statements = [
-    db.prepare(`INSERT INTO asars (id, owner_email, owner_name, group_id, category, title, description, starts_at, public_location, exact_address, beneficiary_consent_confirmed)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`)
-      .bind(asarId, owner.email, owner.displayName, groupId, payload.category, title, payload.description?.trim() ?? "", startsAt, payload.publicLocation?.trim() ?? "", payload.exactAddress?.trim() ?? ""),
+    db.prepare(`INSERT INTO asars (id, owner_email, owner_name, group_id, category, title, description, starts_at, time_mode, public_location, exact_address, beneficiary_consent_confirmed)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`)
+      .bind(asarId, owner.email, owner.displayName, groupId, payload.category, title, payload.description?.trim() ?? "", startsAt, timeMode, payload.publicLocation?.trim() ?? "", payload.exactAddress?.trim() ?? ""),
     ...requirements.map((item, index) => db.prepare(`INSERT INTO requirements (id, asar_id, kind, title, description, required_quantity, is_critical, sort_order)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
       .bind(crypto.randomUUID(), asarId, item.type, item.customTitle!.trim(), item.description?.trim() ?? "", Number(item.requiredQuantity) || 1, item.isCritical ? 1 : 0, index)),

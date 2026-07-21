@@ -1,7 +1,7 @@
 import { organizerFromRequest, unauthorized } from "../../../../../../lib/auth.server";
 import { effectiveLifecycleStatus } from "../../../../../../lib/domain";
 import { normalizeMemberOffers } from "../../../../../../lib/member-offers";
-import { database, ensureDatabase, getAsarView, getGroupSummary, getMemberOffers } from "../../../../../../lib/store.server";
+import { database, ensureDatabase, getAsarView, getGroupSummary, getProfileOffers } from "../../../../../../lib/store.server";
 import type { GroupMemberProfile } from "../../../../../../lib/types";
 
 type MemberRow = {
@@ -18,10 +18,10 @@ async function contextFor(request: Request, groupId: string, memberId: string) {
   if (!viewer) return { error: unauthorized() };
   await ensureDatabase();
   const db = database();
-  const viewerMembership = await db.prepare("SELECT id, role FROM group_members WHERE group_id = ? AND member_key = ?")
+  const viewerMembership = await db.prepare("SELECT id, role FROM group_members WHERE group_id = ? AND member_key = ? AND membership_source = 'EXPLICIT'")
     .bind(groupId, viewer.email).first<{ id: string; role: "OWNER" | "MEMBER" }>();
   if (!viewerMembership) return { error: Response.json({ code: "GROUP_FORBIDDEN", message: "Круг недоступен" }, { status: 403 }) };
-  const member = await db.prepare("SELECT id, member_key, display_name, username, role, joined_at FROM group_members WHERE id = ? AND group_id = ?")
+  const member = await db.prepare("SELECT id, member_key, display_name, username, role, joined_at FROM group_members WHERE id = ? AND group_id = ? AND membership_source = 'EXPLICIT'")
     .bind(memberId, groupId).first<MemberRow>();
   if (!member) return { error: Response.json({ code: "NOT_FOUND", message: "Участник не найден" }, { status: 404 }) };
   return { viewer, viewerMembership, member, db };
@@ -37,8 +37,8 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     LEFT JOIN requirements r ON r.asar_id = a.id
     LEFT JOIN commitments c ON c.requirement_id = r.id
     WHERE a.group_id = ? AND a.lifecycle_status = 'COMPLETED' AND COALESCE(a.outcome, 'FULL') != 'CANCELLED'
-      AND (a.owner_email = ? OR (c.group_member_id = ? AND c.status = 'ATTENDED'))
-    ORDER BY a.starts_at DESC`).bind(id, member.member_key, member.id).all<{ id: string; starts_at: string }>();
+      AND (a.owner_email = ? OR ((c.participant_key = ? OR c.group_member_id = ?) AND c.status = 'ATTENDED'))
+    ORDER BY a.starts_at DESC`).bind(id, member.member_key, member.member_key, member.id).all<{ id: string; starts_at: string }>();
   const history = (await Promise.all(historyRows.results.map((row) => getAsarView(row.id))))
     .filter((asar) => Boolean(asar))
     .map((asar) => ({ ...asar!, exactAddress: undefined }));
@@ -60,7 +60,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     ...(member.username ? { username: member.username } : {}),
     role: member.role,
     joinedAt: member.joined_at,
-    offers: await getMemberOffers(member.id),
+    offers: await getProfileOffers(member.member_key),
     completedAsarCount: history.length,
     ...(canViewInvitationRecency && invitation?.invited_at ? { lastInvitedAt: invitation.invited_at } : {}),
     canViewInvitationRecency,
@@ -85,9 +85,9 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   const offers = normalizeMemberOffers(payload.offers);
   if (!offers) return Response.json({ code: "INVALID_OFFERS", message: "Проверьте выбранные варианты помощи" }, { status: 400 });
   await db.batch([
-    db.prepare("DELETE FROM member_offers WHERE group_member_id = ?").bind(member.id),
-    ...offers.map((kind) => db.prepare("INSERT INTO member_offers (id, group_member_id, kind) VALUES (?, ?, ?)")
-      .bind(crypto.randomUUID(), member.id, kind)),
+    db.prepare("DELETE FROM profile_offers WHERE member_key = ?").bind(member.member_key),
+    ...offers.map((kind) => db.prepare("INSERT INTO profile_offers (id, member_key, kind) VALUES (?, ?, ?)")
+      .bind(crypto.randomUUID(), member.member_key, kind)),
   ]);
-  return Response.json({ offers: await getMemberOffers(member.id) });
+  return Response.json({ offers: await getProfileOffers(member.member_key) });
 }

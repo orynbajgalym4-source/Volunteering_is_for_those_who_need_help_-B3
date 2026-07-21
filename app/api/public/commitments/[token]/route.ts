@@ -5,12 +5,12 @@ import { telegramBotCall } from "../../../../../lib/telegram-bot.server";
 type ManageRow = {
   id: string; status: string; participant_name: string; contact_type: string; contact_value: string;
   quantity: number; comment: string; requirement_id: string; requirement_title: string; asar_id: string;
-  asar_title: string; starts_at: string; public_location: string; exact_address: string; lifecycle_status: string;
+  asar_title: string; starts_at: string; time_mode: "EXACT" | "MORNING" | "AFTERNOON" | "EVENING" | "FLEXIBLE"; public_location: string; exact_address: string; lifecycle_status: string;
 };
 
 async function commitmentByToken(token: string) {
   await ensureDatabase();
-  return database().prepare(`SELECT c.*, r.title as requirement_title, r.asar_id, a.title as asar_title, a.starts_at, a.public_location,
+  return database().prepare(`SELECT c.*, r.title as requirement_title, r.asar_id, a.title as asar_title, a.starts_at, a.time_mode, a.public_location,
     a.exact_address, a.lifecycle_status FROM commitments c JOIN requirements r ON r.id = c.requirement_id
     JOIN asars a ON a.id = r.asar_id WHERE c.manage_token_hash = ?`).bind(await hashToken(token)).first<ManageRow>();
 }
@@ -30,6 +30,7 @@ function shape(row: ManageRow) {
       id: row.asar_id,
       title: row.asar_title,
       startsAt: row.starts_at,
+      timeMode: row.time_mode ?? "EXACT",
       publicLocation: row.public_location,
       exactAddress: confirmed ? row.exact_address : undefined,
       lifecycleStatus: row.lifecycle_status,

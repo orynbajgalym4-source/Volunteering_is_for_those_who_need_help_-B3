@@ -9,7 +9,6 @@ export type GroupSummary = {
   photoUrl?: string;
   role?: "OWNER" | "MEMBER";
   currentMemberId?: string;
-  myOffers?: MemberOffer[];
   memberCount: number;
   asarCount: number;
 };
@@ -40,6 +39,7 @@ export type AsarView = {
   title: string;
   description: string;
   startsAt: string;
+  timeMode: AsarTimeMode;
   publicLocation: string;
   exactAddress?: string;
   lifecycleStatus: string;
@@ -61,6 +61,9 @@ export type GroupMemberProfile = GroupMemberView & {
 export type SelfProfileView = {
   displayName: string;
   username?: string;
+  offers: MemberOffer[];
   groups: GroupSummary[];
   history: AsarView[];
 };
+
+export type AsarTimeMode = "EXACT" | "MORNING" | "AFTERNOON" | "EVENING" | "FLEXIBLE";

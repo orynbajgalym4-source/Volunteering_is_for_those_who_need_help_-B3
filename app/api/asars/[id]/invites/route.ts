@@ -42,6 +42,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     await db.prepare("INSERT INTO invites (id, asar_id, requirement_id, scope, token_hash, expires_at, token_preview) VALUES (?, ?, ?, ?, ?, ?, ?)")
       .bind(...common, token.slice(0, 8)).run();
   }
-  const publicUrl = new URL(`/join/${token}`, request.url).toString();
-  return Response.json({ invite: { token, scope, requirementId: scope === "SINGLE_REQUIREMENT" ? payload.requirementId : null, expiresAt, shareUrl: publicUrl, publicUrl, telegramUrl: telegramInviteLink(token) } }, { status: 201 });
+  const publicUrl = new URL(`/invite/${token}`, request.url).toString();
+  const joinUrl = new URL(`/join/${token}`, request.url).toString();
+  return Response.json({ invite: { token, scope, requirementId: scope === "SINGLE_REQUIREMENT" ? payload.requirementId : null, expiresAt, shareUrl: publicUrl, publicUrl, joinUrl, telegramUrl: telegramInviteLink(token) } }, { status: 201 });
 }

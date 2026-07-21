@@ -28,7 +28,8 @@ export async function ensureDatabase() {
     db.prepare(`CREATE TABLE IF NOT EXISTS group_members (
       id TEXT PRIMARY KEY, group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
       member_key TEXT NOT NULL, display_name TEXT NOT NULL, username TEXT,
-      role TEXT NOT NULL DEFAULT 'MEMBER', joined_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      role TEXT NOT NULL DEFAULT 'MEMBER', membership_source TEXT NOT NULL DEFAULT 'EXPLICIT',
+      joined_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       UNIQUE(group_id, member_key)
     )`),
     db.prepare(`CREATE TABLE IF NOT EXISTS asars (
@@ -36,6 +37,7 @@ export async function ensureDatabase() {
       group_id TEXT REFERENCES groups(id) ON DELETE SET NULL,
       category TEXT NOT NULL DEFAULT 'OTHER',
       title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', starts_at TEXT NOT NULL,
+      time_mode TEXT NOT NULL DEFAULT 'EXACT',
       public_location TEXT NOT NULL, exact_address TEXT NOT NULL,
       lifecycle_status TEXT NOT NULL DEFAULT 'DRAFT', beneficiary_consent_confirmed INTEGER NOT NULL DEFAULT 0,
       outcome TEXT, outcome_note TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -56,7 +58,8 @@ export async function ensureDatabase() {
     db.prepare(`CREATE TABLE IF NOT EXISTS commitments (
       id TEXT PRIMARY KEY, requirement_id TEXT NOT NULL REFERENCES requirements(id) ON DELETE CASCADE,
       participant_name TEXT NOT NULL, contact_type TEXT NOT NULL, contact_value TEXT NOT NULL,
-      normalized_contact_hash TEXT NOT NULL, group_member_id TEXT REFERENCES group_members(id) ON DELETE SET NULL,
+      normalized_contact_hash TEXT NOT NULL, participant_key TEXT,
+      group_member_id TEXT REFERENCES group_members(id) ON DELETE SET NULL,
       quantity INTEGER NOT NULL DEFAULT 1,
       status TEXT NOT NULL DEFAULT 'CLAIMED', manage_token_hash TEXT NOT NULL UNIQUE,
       comment TEXT NOT NULL DEFAULT '',
@@ -73,6 +76,11 @@ export async function ensureDatabase() {
       id TEXT PRIMARY KEY, group_member_id TEXT NOT NULL REFERENCES group_members(id) ON DELETE CASCADE,
       kind TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       UNIQUE(group_member_id, kind)
+    )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS profile_offers (
+      id TEXT PRIMARY KEY, member_key TEXT NOT NULL, kind TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(member_key, kind)
     )`),
     db.prepare(`CREATE TABLE IF NOT EXISTS asar_offer_snapshots (
       id TEXT PRIMARY KEY, asar_id TEXT NOT NULL REFERENCES asars(id) ON DELETE CASCADE,
@@ -93,6 +101,7 @@ export async function ensureDatabase() {
     db.prepare("CREATE INDEX IF NOT EXISTS invites_asar_idx ON invites(asar_id)"),
     db.prepare("CREATE INDEX IF NOT EXISTS commitments_requirement_idx ON commitments(requirement_id)"),
     db.prepare("CREATE INDEX IF NOT EXISTS member_offers_member_idx ON member_offers(group_member_id)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS profile_offers_member_idx ON profile_offers(member_key)"),
     db.prepare("CREATE INDEX IF NOT EXISTS asar_offer_snapshots_asar_idx ON asar_offer_snapshots(asar_id)"),
     db.prepare("CREATE INDEX IF NOT EXISTS group_member_invitations_member_idx ON group_member_invitations(group_member_id, invited_at)"),
     db.prepare("CREATE INDEX IF NOT EXISTS group_member_invitations_asar_idx ON group_member_invitations(asar_id)"),
@@ -101,19 +110,27 @@ export async function ensureDatabase() {
   if (!asarColumns.results.some((column) => column.name === "group_id")) {
     await db.prepare("ALTER TABLE asars ADD COLUMN group_id TEXT REFERENCES groups(id) ON DELETE SET NULL").run();
   }
+  if (!asarColumns.results.some((column) => column.name === "time_mode")) {
+    await db.prepare("ALTER TABLE asars ADD COLUMN time_mode TEXT NOT NULL DEFAULT 'EXACT'").run();
+  }
+  const groupMemberColumns = await db.prepare("PRAGMA table_info(group_members)").all<{ name: string }>();
+  if (!groupMemberColumns.results.some((column) => column.name === "membership_source")) {
+    await db.prepare("ALTER TABLE group_members ADD COLUMN membership_source TEXT NOT NULL DEFAULT 'EXPLICIT'").run();
+    await db.prepare("UPDATE group_members SET membership_source = 'ASAR_RESPONSE' WHERE role = 'MEMBER'").run();
+  }
   const commitmentColumns = await db.prepare("PRAGMA table_info(commitments)").all<{ name: string }>();
   if (!commitmentColumns.results.some((column) => column.name === "group_member_id")) {
     await db.prepare("ALTER TABLE commitments ADD COLUMN group_member_id TEXT REFERENCES group_members(id) ON DELETE SET NULL").run();
   }
+  if (!commitmentColumns.results.some((column) => column.name === "participant_key")) {
+    await db.prepare("ALTER TABLE commitments ADD COLUMN participant_key TEXT").run();
+  }
   await db.prepare("CREATE INDEX IF NOT EXISTS asars_group_idx ON asars(group_id)").run();
   await db.prepare("CREATE INDEX IF NOT EXISTS commitments_group_member_idx ON commitments(group_member_id)").run();
-  await db.prepare(`UPDATE commitments SET group_member_id = (
-    SELECT gm.id FROM group_members gm
-    JOIN requirements r ON r.id = commitments.requirement_id
-    JOIN asars a ON a.id = r.asar_id
-    WHERE gm.group_id = a.group_id AND gm.member_key = 'contact:' || commitments.normalized_contact_hash
-    LIMIT 1
-  ) WHERE group_member_id IS NULL`).run();
+  await db.prepare("CREATE INDEX IF NOT EXISTS commitments_participant_idx ON commitments(participant_key)").run();
+  await db.prepare(`INSERT OR IGNORE INTO profile_offers (id, member_key, kind, updated_at)
+    SELECT mo.id, gm.member_key, mo.kind, mo.updated_at
+    FROM member_offers mo JOIN group_members gm ON gm.id = mo.group_member_id`).run();
   initialized = true;
 }
 
@@ -192,32 +209,35 @@ function mapGroup(row: RawGroup): GroupSummary {
 export async function getGroupSummary(groupId: string, memberKey?: string): Promise<GroupSummary | undefined> {
   await ensureDatabase();
   const row = await database().prepare(`SELECT g.*, gm.role, gm.id AS member_id,
-    (SELECT COUNT(*) FROM group_members members WHERE members.group_id = g.id) AS member_count,
+    (SELECT COUNT(*) FROM group_members members WHERE members.group_id = g.id AND members.membership_source = 'EXPLICIT') AS member_count,
     (SELECT COUNT(*) FROM asars a WHERE a.group_id = g.id) AS asar_count
-    FROM groups g LEFT JOIN group_members gm ON gm.group_id = g.id AND gm.member_key = ? WHERE g.id = ?`)
+    FROM groups g LEFT JOIN group_members gm ON gm.group_id = g.id AND gm.member_key = ? AND gm.membership_source = 'EXPLICIT' WHERE g.id = ?`)
     .bind(memberKey ?? "", groupId).first<RawGroup>();
   if (!row) return undefined;
-  const group = mapGroup(row);
-  return row.member_id ? { ...group, myOffers: await getMemberOffers(row.member_id) } : group;
+  return mapGroup(row);
 }
 
 export async function getGroupsForMember(memberKey: string): Promise<GroupSummary[]> {
   await ensureDatabase();
   const rows = await database().prepare(`SELECT g.*, gm.role, gm.id AS member_id,
-    (SELECT COUNT(*) FROM group_members members WHERE members.group_id = g.id) AS member_count,
+    (SELECT COUNT(*) FROM group_members members WHERE members.group_id = g.id AND members.membership_source = 'EXPLICIT') AS member_count,
     (SELECT COUNT(*) FROM asars a WHERE a.group_id = g.id) AS asar_count
     FROM group_members gm JOIN groups g ON g.id = gm.group_id
-    WHERE gm.member_key = ? ORDER BY g.updated_at DESC`).bind(memberKey).all<RawGroup>();
-  return await Promise.all(rows.results.map(async (row) => {
-    const group = mapGroup(row);
-    return row.member_id ? { ...group, myOffers: await getMemberOffers(row.member_id) } : group;
-  }));
+    WHERE gm.member_key = ? AND gm.membership_source = 'EXPLICIT' ORDER BY g.updated_at DESC`).bind(memberKey).all<RawGroup>();
+  return rows.results.map(mapGroup);
 }
 
 export async function getMemberOffers(groupMemberId: string): Promise<MemberOffer[]> {
   await ensureDatabase();
   const rows = await database().prepare("SELECT kind FROM member_offers WHERE group_member_id = ? ORDER BY updated_at, kind")
     .bind(groupMemberId).all<{ kind: string }>();
+  return rows.results.map((row) => row.kind).filter(isMemberOffer);
+}
+
+export async function getProfileOffers(memberKey: string): Promise<MemberOffer[]> {
+  await ensureDatabase();
+  const rows = await database().prepare("SELECT kind FROM profile_offers WHERE member_key = ? ORDER BY updated_at, kind")
+    .bind(memberKey).all<{ kind: string }>();
   return rows.results.map((row) => row.kind).filter(isMemberOffer);
 }
 
@@ -246,6 +266,7 @@ export function mapAsar(row: Record<string, unknown>) {
     title: row.title,
     description: row.description,
     startsAt: row.starts_at,
+    timeMode: (["EXACT", "MORNING", "AFTERNOON", "EVENING", "FLEXIBLE"].includes(String(row.time_mode)) ? String(row.time_mode) : "EXACT") as "EXACT" | "MORNING" | "AFTERNOON" | "EVENING" | "FLEXIBLE",
     publicLocation: row.public_location,
     exactAddress: row.exact_address,
     lifecycleStatus: effectiveLifecycleStatus(String(row.lifecycle_status), String(row.starts_at)),

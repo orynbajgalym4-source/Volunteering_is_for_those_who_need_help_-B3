@@ -2,8 +2,6 @@
 
 # dependencies
 /node_modules
-frontend/node_modules/
-backend/venv/
 /.pnp
 .pnp.*
 .yarn/*
@@ -23,7 +21,6 @@ backend/venv/
 # misc
 .DS_Store
 *.pem
-*.pyc
 
 # debug
 npm-debug.log*

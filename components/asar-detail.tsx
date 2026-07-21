@@ -1,18 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../lib/client";
 import type { AsarView } from "../lib/types";
 import { useAsar } from "../lib/use-asar";
-import { AppHeader, EmptyState, formatDate, LoadingCard, ReadinessOrb, StatusBadge } from "./asar-ui";
+import { AppHeader, EmptyState, LoadingCard, ReadinessOrb, StatusBadge } from "./asar-ui";
 import { ASAR_CATEGORIES, requirementTypeInfo } from "../lib/catalog";
 import { isTerminalLifecycle } from "../lib/domain";
 import { telegramHaptic } from "../lib/telegram";
 import { GroupAvatar } from "./group-ui";
 import { OfferChips } from "./member-offers";
-
-type InviteResponse = { invite: { publicUrl?: string; shareUrl: string; telegramUrl?: string } };
+import { InviteComposer } from "./invite-composer";
+import { formatAsarSchedule } from "../lib/schedule";
 
 function telegramProfileUrl(value?: string) {
   const username = value?.trim().replace(/^https?:\/\/t\.me\//, "").replace(/^@/, "");
@@ -23,36 +23,14 @@ export function AsarDetail({ id }: { id: string }) {
   const { asar, setAsar, loading, error } = useAsar(id);
   const [busy, setBusy] = useState("");
   const [message, setMessage] = useState("");
-  const [shareUrl, setShareUrl] = useState("");
   const [flipped, setFlipped] = useState<Set<string>>(new Set());
-  const [renderedAt] = useState(() => Date.now());
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 30_000); return () => window.clearInterval(timer); }, []);
 
   const act = async (action: string) => {
     const data = await api<{ asar: AsarView }>(`/api/asars/${id}/actions`, { method: "POST", body: JSON.stringify({ action }) });
     setAsar(data.asar);
     return data.asar;
-  };
-
-  const share = async (publishFirst = false) => {
-    setBusy(publishFirst ? "publish" : "share");
-    setMessage("");
-    try {
-      const current = publishFirst ? await act("publish") : asar;
-      const data = await api<InviteResponse>(`/api/asars/${id}/invites`, { method: "POST", body: JSON.stringify({ scope: "FULL_ASAR" }) });
-      const url = data.invite.publicUrl ?? data.invite.shareUrl;
-      setShareUrl(url);
-      telegramHaptic("success");
-      const payload = { title: current?.title ?? "Асар", text: `Присоединяйтесь к асару «${current?.title ?? "общее дело"}»`, url };
-      if (navigator.share) {
-        try { await navigator.share(payload); } catch (caught) { if (!(caught instanceof DOMException && caught.name === "AbortError")) throw caught; }
-      } else {
-        await navigator.clipboard.writeText(url);
-        setMessage("Общая ссылка скопирована. Её можно отправить в любой мессенджер.");
-      }
-    } catch (caught) {
-      telegramHaptic("error");
-      setMessage(caught instanceof Error ? caught.message : "Не удалось подготовить ссылку");
-    } finally { setBusy(""); }
   };
 
   const transition = async (action: string) => {
@@ -82,19 +60,22 @@ export function AsarDetail({ id }: { id: string }) {
   const categoryLabel = ASAR_CATEGORIES.find((item) => item.value === asar.category)?.label ?? "Другое";
   const needsOutcome = asar.lifecycleStatus === "EXPIRED";
   const terminal = isTerminalLifecycle(asar.lifecycleStatus) && !needsOutcome;
-  const timeToStart = new Date(asar.startsAt).getTime() <= renderedAt + 2 * 60 * 60 * 1000;
+  const startsAt = new Date(asar.startsAt).getTime();
+  const scheduledTimeReached = startsAt <= now;
+  const canStartEarly = asar.lifecycleStatus === "PUBLISHED" && asar.readiness.state === "READY" && startsAt > now;
 
   return <div className="app-page"><AppHeader title="Асар" /><main className="app-main">
     <div className="page-heading compact-heading"><Link className="text-link" href="/app/asars">← Все асары</Link></div>
     {message && <div className={message.includes("скопирована") ? "success-banner" : "error-banner"}>{message}</div>}
     {terminal && <div className="history-banner"><StatusBadge state={asar.lifecycleStatus} /><div><strong>{asar.lifecycleStatus === "CANCELLED" ? "Асар отменён и не состоялся" : "Асар завершён и сохранён в истории"}</strong><span>Новые отклики, приглашения и другие действия отключены.</span></div></div>}
     {needsOutcome && <div className="history-banner outcome-required-banner"><StatusBadge state="EXPIRED" /><div><strong>Время асара прошло — зафиксируйте результат</strong><span>Пока итог не указан, дело не попадёт в историю состоявшихся асаров.</span></div><Link className="button button-primary" href={`/app/asars/${id}/complete`}>Указать итог</Link></div>}
+    {canStartEarly && <section className="early-start-banner"><div><span className="section-kicker">Всё необходимое собрано</span><h2>Можно начать раньше</h2><p>Асар был назначен на {formatAsarSchedule(asar.startsAt, asar.timeMode, true)}, но все критические роли уже подтверждены. Сообщите участникам об изменении времени перед стартом.</p></div><button className="button button-primary button-large" disabled={Boolean(busy)} onClick={() => void transition("start")}>{busy === "start" ? "Начинаем…" : "Начать асар раньше"}</button></section>}
     <div className={`detail-grid ${terminal ? "detail-grid-history" : ""}`}>
-      <section className="hero-panel"><div className="hero-panel-top"><StatusBadge state={asar.lifecycleStatus} /><span className="muted">{formatDate(asar.startsAt)}</span></div><span className="section-kicker">{categoryLabel}</span><h1>{asar.title}</h1>{asar.description && <p className="hero-description">{asar.description}</p>}{asar.group && <Link className="event-group-card" href={`/app/groups/${asar.group.id}`}><GroupAvatar group={asar.group} size="small" /><span><small>Круг</small><strong>{asar.group.name}</strong><em>{asar.group.memberCount} участников</em></span><i>›</i></Link>}
-        <div className="event-attributes" aria-label="Атрибуты асара"><span>⌖ {asar.publicLocation || "Место уточняется"}</span><span>◷ {formatDate(asar.startsAt, true)}</span><span>◫ {asar.requirements.length} потребностей</span><span>● {participants} участников</span></div>
+      <section className="hero-panel"><div className="hero-panel-top"><StatusBadge state={asar.lifecycleStatus} /><span className="muted">{formatAsarSchedule(asar.startsAt, asar.timeMode)}</span></div><span className="section-kicker">{categoryLabel}</span><h1>{asar.title}</h1>{asar.description && <p className="hero-description">{asar.description}</p>}{asar.group && <Link className="event-group-card" href={`/app/groups/${asar.group.id}`}><GroupAvatar group={asar.group} size="small" /><span><small>Круг</small><strong>{asar.group.name}</strong><em>{asar.group.memberCount} участников</em></span><i>›</i></Link>}
+        <div className="event-attributes" aria-label="Атрибуты асара"><span>⌖ {asar.publicLocation || "Место уточняется"}</span><span>◷ {formatAsarSchedule(asar.startsAt, asar.timeMode, true)}</span><span>◫ {asar.requirements.length} потребностей</span><span>● {participants} участников</span></div>
         <div className="readiness-row"><ReadinessOrb state={asar.readiness.state} percent={asar.readiness.percentage} /><div className="readiness-text"><h3>{readinessTitle}</h3><p>{asar.readiness.state === "READY" ? "Все критические обязательства подтверждены." : "Готовность меняется после откликов и подтверждений участников."}</p>{missing.length > 0 && <div className="risk-list">Критично: {missing.join(", ")}</div>}</div></div>
       </section>
-      {!terminal && <aside className="side-panel next-step-panel"><span className="section-kicker">Следующий шаг</span>{asar.lifecycleStatus === "DRAFT" && <><h3>Позовите участников</h3><p>Сейчас это черновик. После публикации откроется общая ссылка для любого мессенджера.</p><button className="button button-primary button-block" disabled={Boolean(busy)} onClick={() => void share(true)}>{busy === "publish" ? "Публикуем…" : "Опубликовать и поделиться"}</button></>}{asar.lifecycleStatus === "PUBLISHED" && !timeToStart && <><h3>Продолжайте сбор</h3><p>Люди могут присоединяться по общей ссылке, пока есть свободные места.</p><button className="button button-primary button-block" disabled={Boolean(busy)} onClick={() => void share()}>{busy === "share" ? "Готовим ссылку…" : "Поделиться"}</button></>}{asar.lifecycleStatus === "PUBLISHED" && timeToStart && <><h3>Пора начинать</h3><p>После старта новые участники всё ещё смогут занять свободные места.</p><button className="button button-primary button-block" disabled={Boolean(busy)} onClick={() => void transition("start")}>{busy === "start" ? "Начинаем…" : "Начать дело"}</button></>}{asar.lifecycleStatus === "IN_PROGRESS" && <><h3>Асар идёт</h3><p>Завершайте только после того, как дело действительно состоялось.</p><Link className="button button-primary button-block" href={`/app/asars/${id}/complete`}>Завершить дело</Link></>}{needsOutcome && <><h3>Нужно указать итог</h3><p>Время прошло, но асар ещё не считается состоявшимся.</p><Link className="button button-primary button-block" href={`/app/asars/${id}/complete`}>Зафиксировать результат</Link></>}
+      {!terminal && <aside className="side-panel next-step-panel"><span className="section-kicker">Следующий шаг</span>{asar.lifecycleStatus === "DRAFT" && <><h3>Откройте набор</h3><p>После публикации вы сможете выбрать общее приглашение или позвать человека на конкретную роль.</p><button className="button button-primary button-block" disabled={Boolean(busy)} onClick={() => void transition("publish")}>{busy === "publish" ? "Публикуем…" : "Опубликовать асар"}</button></>}{asar.lifecycleStatus === "PUBLISHED" && !scheduledTimeReached && <><h3>{asar.readiness.state === "READY" ? "Команда собрана" : "Продолжайте сбор"}</h3><p>{asar.readiness.state === "READY" ? "Можно начать раньше с отдельной кнопки выше или отправить участникам обновлённое приглашение." : "Выберите общий асар или конкретную свободную обязанность."}</p><a className="button button-secondary button-block" href="#invite-composer">Настроить приглашение</a></>}{asar.lifecycleStatus === "PUBLISHED" && scheduledTimeReached && <><h3>Назначенное время наступило</h3><p>Начните проведение, даже если часть некритичных ролей ещё свободна.</p><button className="button button-primary button-block" disabled={Boolean(busy)} onClick={() => void transition("start")}>{busy === "start" ? "Начинаем…" : "Начать асар"}</button></>}{asar.lifecycleStatus === "IN_PROGRESS" && <><h3>Асар идёт</h3><p>Завершайте только после того, как дело действительно состоялось.</p><Link className="button button-primary button-block" href={`/app/asars/${id}/complete`}>Завершить дело</Link></>}{needsOutcome && <><h3>Нужно указать итог</h3><p>Время прошло, но асар ещё не считается состоявшимся.</p><Link className="button button-primary button-block" href={`/app/asars/${id}/complete`}>Зафиксировать результат</Link></>}
         <div className="stat-list"><div><span>Потребностей</span><strong>{asar.requirements.length}</strong></div><div><span>Участников</span><strong>{participants}</strong></div><div><span>Критических пробелов</span><strong>{asar.readiness.missingCritical.length}</strong></div></div></aside>}
     </div>
 
@@ -107,8 +88,8 @@ export function AsarDetail({ id }: { id: string }) {
 
     {terminal && asar.lifecycleStatus === "COMPLETED" && asar.followUpOffers && asar.followUpOffers.length > 0 && <section className="section-block follow-up-history"><div className="section-heading"><div><span className="section-kicker">После асара</span><h2>С чем можно обратиться снова</h2></div></div>{asar.followUpOffers.map((entry) => <div className="follow-up-history-row" key={entry.memberId}><strong>{entry.displayName}</strong><OfferChips offers={entry.offers} /></div>)}</section>}
 
-    {!terminal && !needsOutcome && asar.lifecycleStatus !== "DRAFT" && <section className="inline-share"><div><span className="section-kicker">Одна ссылка для всех</span><h2>Позовите тех, кто нужен</h2><p>Откроется обычная публичная карточка. Ссылку можно отправить в Telegram, WhatsApp или любой другой сервис.</p></div><button className="button button-primary" disabled={Boolean(busy)} onClick={() => void share()}>{busy === "share" ? "Готовим…" : "Поделиться"}</button>{shareUrl && <div className="share-link-row"><input className="input" readOnly value={shareUrl} /><button className="button button-secondary" onClick={() => { void navigator.clipboard.writeText(shareUrl); setMessage("Общая ссылка скопирована. Её можно отправить в любой мессенджер."); }}>Копировать</button></div>}</section>}
+    {!terminal && !needsOutcome && asar.lifecycleStatus !== "DRAFT" && <InviteComposer asar={asar} />}
 
-    {!terminal && <details className="other-actions"><summary>Другие действия</summary><div><p>{asar.lifecycleStatus === "PUBLISHED" ? "«Начать дело» переводит асар в этап проведения. «Отменить» означает, что дело не состоится." : "Отмена означает, что асар не состоится. Это отличается от завершения состоявшегося дела."}</p>{asar.lifecycleStatus === "PUBLISHED" && !timeToStart && <button className="text-action" disabled={Boolean(busy)} onClick={() => void transition("start")}>Начать раньше назначенного времени</button>}<button className="text-action danger-text" disabled={Boolean(busy)} onClick={cancel}>Отменить асар</button></div></details>}
+    {!terminal && <details className="other-actions"><summary>Другие действия</summary><div><p>{asar.lifecycleStatus === "PUBLISHED" ? "«Начать асар» означает, что люди приступили к делу. «Отменить» — что дело не состоится." : "Отмена означает, что асар не состоится. Это отличается от завершения состоявшегося дела."}</p><button className="text-action danger-text" disabled={Boolean(busy)} onClick={cancel}>Отменить асар</button></div></details>}
   </main></div>;
 }
