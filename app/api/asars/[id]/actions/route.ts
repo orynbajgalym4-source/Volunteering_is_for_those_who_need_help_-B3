@@ -34,6 +34,17 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   const db = database();
   const statements = [db.prepare("UPDATE asars SET lifecycle_status = ?, outcome = ?, outcome_note = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND owner_email = ?")
     .bind(target, target === "COMPLETED" ? payload.outcome : null, target === "COMPLETED" ? payload.note?.trim() ?? "" : null, id, owner.email)];
+  const roundCloseReasons: Partial<Record<LifecycleStatus, "STARTED" | "COMPLETED" | "CANCELLED">> = {
+    IN_PROGRESS: "STARTED",
+    COMPLETED: "COMPLETED",
+    CANCELLED: "CANCELLED",
+  };
+  const roundCloseReason = roundCloseReasons[target];
+  if (roundCloseReason) {
+    statements.push(db.prepare(`UPDATE reconfirmation_rounds
+      SET closed_at = CURRENT_TIMESTAMP, close_reason = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE asar_id = ? AND closed_at IS NULL`).bind(roundCloseReason, id));
+  }
   if (target === "COMPLETED" && offers !== undefined) {
     statements.push(
       db.prepare("DELETE FROM profile_offers WHERE member_key = ?").bind(owner.email),

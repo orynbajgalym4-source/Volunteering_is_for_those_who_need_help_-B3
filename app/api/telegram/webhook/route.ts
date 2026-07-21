@@ -18,6 +18,7 @@ export async function POST(request: Request) {
   const startParam = message.text.split(/\s+/, 2)[1] ?? "";
   const origin = new URL(request.url).origin;
   const isInvite = startParam.startsWith("join_");
+  const isReconfirmation = startParam.startsWith("reconfirm_");
   const sender = message.from;
   if (!sender?.id) return Response.json({ ok: true });
   const launchToken = await createTelegramLaunch({
@@ -29,11 +30,14 @@ export async function POST(request: Request) {
   const menuUrl = new URL(origin);
   menuUrl.searchParams.set("launch", launchToken);
   const webAppUrl = new URL(menuUrl);
-  if (isInvite) webAppUrl.searchParams.set("startapp", startParam);
+  if (isInvite || isReconfirmation) webAppUrl.searchParams.set("startapp", startParam);
   const firstName = message.from?.first_name ? `, ${message.from.first_name}` : "";
-  const text = isInvite
-    ? "Вас пригласили в асар. Откройте карточку, выберите конкретный вклад и подтвердите участие — аккаунт создавать не нужно."
-    : `Сәлем${firstName}! Asar помогает собрать людей и ресурсы вокруг одного общего дела и заранее увидеть риск срыва.`;
+  const text = isReconfirmation
+    ? "Инициатор асара просит обновить готовность. Откройте перекличку и отдельно подтвердите каждую свою роль или сообщите, что не сможете."
+    : isInvite
+      ? "Вас пригласили в асар. Откройте карточку, выберите конкретный вклад и подтвердите участие — аккаунт создавать не нужно."
+      : `Сәлем${firstName}! Asar помогает собрать людей и ресурсы вокруг одного общего дела и заранее увидеть риск срыва.`;
+  const buttonText = isReconfirmation ? "Ответить по ролям" : isInvite ? "Открыть приглашение" : "Открыть Asar";
 
   try {
     await telegramBotCall("setChatMenuButton", {
@@ -45,7 +49,7 @@ export async function POST(request: Request) {
   await telegramBotCall("sendMessage", {
     chat_id: message.chat.id,
     text,
-    reply_markup: { inline_keyboard: [[{ text: isInvite ? "Открыть приглашение" : "Открыть Asar", web_app: { url: webAppUrl.toString() } }]] },
+    reply_markup: { inline_keyboard: [[{ text: buttonText, web_app: { url: webAppUrl.toString() } }]] },
   });
   return Response.json({ ok: true });
 }

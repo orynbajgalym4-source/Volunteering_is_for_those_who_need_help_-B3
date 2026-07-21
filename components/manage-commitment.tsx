@@ -6,16 +6,22 @@ import { api } from "../lib/client";
 import type { Readiness } from "../lib/domain";
 import type { AsarTimeMode } from "../lib/types";
 import { formatAsarSchedule } from "../lib/schedule";
+import { reconfirmationExpiry } from "../lib/reconfirmation";
 import { telegramHaptic } from "../lib/telegram";
 import { Brand, EmptyState, LoadingCard, StatusBadge } from "./asar-ui";
 
 type Managed = {
   id: string;
   participantName: string;
+  contactType: "PHONE" | "TELEGRAM";
   contactValue: string;
   quantity: number;
   comment: string;
   status: string;
+  reminderOptIn?: boolean;
+  canUpdateReminderPreference?: boolean;
+  canCancel?: boolean;
+  reconfirmationActive?: boolean;
   requirementTitle: string;
   asar: { id: string; title: string; startsAt: string; timeMode: AsarTimeMode; publicLocation: string; exactAddress?: string; lifecycleStatus: string };
 };
@@ -49,21 +55,28 @@ export function ManageCommitment({ token }: { token: string }) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState("");
+  const [reminderOptIn, setReminderOptIn] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
     api<ManagedResponse>(`/api/public/commitments/${token}`)
-      .then((data) => { setItem(data.commitment); setAsarStatus(data.asarStatus); })
+      .then((data) => { setItem(data.commitment); setReminderOptIn(Boolean(data.commitment.reminderOptIn)); setAsarStatus(data.asarStatus); })
       .catch((caught) => setError(caught instanceof Error ? caught.message : "Ссылка недоступна"))
       .finally(() => setLoading(false));
   }, [token]);
 
-  const act = async (action: string) => {
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const act = async (action: string, extra?: Record<string, unknown>) => {
     setBusy(true); setError("");
     try {
-      const data = await api<ManagedResponse>(`/api/public/commitments/${token}`, { method: "POST", body: JSON.stringify({ action }) });
+      const data = await api<ManagedResponse>(`/api/public/commitments/${token}`, { method: "POST", body: JSON.stringify({ action, ...extra }) });
       telegramHaptic(action === "confirm" ? "success" : "light");
-      setItem(data.commitment); setAsarStatus(data.asarStatus);
-      setToast(action === "confirm" ? "Участие подтверждено" : "Участие отменено — организатор уже видит изменение");
+      setItem(data.commitment); setReminderOptIn(Boolean(data.commitment.reminderOptIn)); setAsarStatus(data.asarStatus);
+      setToast(action === "confirm" ? "Участие подтверждено" : action === "cancel" ? "Участие отменено — организатор уже видит изменение" : "Настройка сообщения сохранена");
       window.setTimeout(() => setToast(""), 3500);
     } catch (caught) { telegramHaptic("error"); setError(caught instanceof Error ? caught.message : "Не удалось обновить участие"); }
     finally { setBusy(false); }
@@ -74,6 +87,9 @@ export function ManageCommitment({ token }: { token: string }) {
 
   const participation = participationCopy(item.status);
   const event = asarStatusCopy(asarStatus);
+  const contributionOpen = new Date(reconfirmationExpiry(item.asar.startsAt, item.asar.timeMode)).getTime() > now;
+  const canUpdateReminderPreference = Boolean(item.canUpdateReminderPreference ?? (!item.reconfirmationActive && item.asar.lifecycleStatus === "PUBLISHED" && contributionOpen)) && contributionOpen;
+  const canCancel = Boolean(item.canCancel ?? (["CLAIMED", "CONFIRMED"].includes(item.status) && item.asar.lifecycleStatus === "PUBLISHED" && contributionOpen)) && contributionOpen;
   return <div className="guest-page"><div className="guest-shell"><div className="guest-top"><Brand compact /><small>Моё участие</small></div><section className="manage-card">
     <div className="manage-card-heading"><StatusBadge state={item.status} /><span>Вклад: {item.requirementTitle}</span></div><h1>{item.asar.title}</h1><p className="panel-lead">{item.participantName}, здесь собраны только ваши данные участия и актуальное состояние общего дела.</p>
     {error && <div className="error-banner">{error}</div>}
@@ -81,8 +97,9 @@ export function ManageCommitment({ token }: { token: string }) {
     <div className="manage-facts"><div><small>Когда</small><strong>{formatAsarSchedule(item.asar.startsAt, item.asar.timeMode, true)}</strong></div><div><small>Где</small><strong>{item.asar.publicLocation}</strong></div><div><small>Ваш вклад</small><strong>{item.requirementTitle} · {item.quantity}</strong></div><div><small>Контакт</small><strong>{item.contactValue}</strong></div></div>
     <section className="asar-status-card"><div className="asar-status-heading"><div><small>Статус асара</small><strong>{event.label}</strong></div><StatusBadge state={event.badge} /></div><p>{event.text}</p>{asarStatus && <div className="asar-status-progress"><i style={{ width: `${asarStatus.readiness.percentage}%` }} /><span>{asarStatus.readiness.percentage}% готовности</span></div>}</section>
     {item.asar.exactAddress ? <div className="exact-address"><strong>Точный адрес:</strong> {item.asar.exactAddress}</div> : item.status === "CLAIMED" && <div className="error-banner">Точный адрес откроется после подтверждения участия.</div>}
+    {item.contactType === "TELEGRAM" && ["CLAIMED", "CONFIRMED"].includes(item.status) && <section className={`reminder-preference ${canUpdateReminderPreference ? "" : "locked"}`}><label><input type="checkbox" checked={reminderOptIn} disabled={!canUpdateReminderPreference || busy} onChange={(event) => setReminderOptIn(event.target.checked)} /><span><strong>Сообщение перед началом асара</strong><small>{canUpdateReminderPreference ? "Разрешить инициатору один раз написать вам при ручном запуске переклички." : "Перекличка уже началась или окно настройки закрыто."}</small></span></label>{canUpdateReminderPreference && reminderOptIn !== Boolean(item.reminderOptIn) && <button className="button button-secondary" disabled={busy} onClick={() => void act("reminder-opt-in", { reminderOptIn })}>{busy ? "Сохраняем…" : "Сохранить"}</button>}</section>}
     {item.status === "CLAIMED" && <button className="button button-success button-large button-block" disabled={busy} onClick={() => void act("confirm")}>{busy ? "Подтверждаем…" : "Подтвердить участие"}</button>}
-    {["CLAIMED", "CONFIRMED"].includes(item.status) && !["COMPLETED", "CANCELLED", "EXPIRED"].includes(asarStatus?.lifecycleStatus ?? "") && <button className="button button-plain button-block danger-text" disabled={busy} onClick={() => void act("cancel")}>Не смогу участвовать</button>}
+    {canCancel && <button className="button button-plain button-block danger-text" disabled={busy} onClick={() => void act("cancel")}>Не смогу участвовать</button>}
     <div className="manage-app-cta"><div><strong>Всё остальное — в Asar</strong><p>Откройте главную страницу, чтобы увидеть свои круги, асары и историю участия.</p></div><Link className="button button-primary button-large" href="/">Перейти в Asar →</Link></div>
   </section>{toast && <div className="toast">{toast}</div>}</div></div>;
 }

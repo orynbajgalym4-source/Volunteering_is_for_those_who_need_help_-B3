@@ -13,6 +13,7 @@ import { GroupAvatar } from "./group-ui";
 import { OfferChips } from "./member-offers";
 import { InviteComposer } from "./invite-composer";
 import { formatAsarSchedule } from "../lib/schedule";
+import { ReconfirmationPanel } from "./reconfirm-asar";
 
 function telegramProfileUrl(value?: string) {
   const username = value?.trim().replace(/^https?:\/\/t\.me\//, "").replace(/^@/, "");
@@ -20,11 +21,13 @@ function telegramProfileUrl(value?: string) {
 }
 
 export function AsarDetail({ id }: { id: string }) {
-  const { asar, setAsar, loading, error } = useAsar(id);
+  const { asar, setAsar, loading, error, refresh } = useAsar(id);
   const [busy, setBusy] = useState("");
   const [message, setMessage] = useState("");
   const [flipped, setFlipped] = useState<Set<string>>(new Set());
   const [now, setNow] = useState(() => Date.now());
+  const [inviteRequirementId, setInviteRequirementId] = useState("");
+  const [inviteSelectionVersion, setInviteSelectionVersion] = useState(0);
   useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 30_000); return () => window.clearInterval(timer); }, []);
 
   const act = async (action: string) => {
@@ -50,6 +53,12 @@ export function AsarDetail({ id }: { id: string }) {
     if (next.has(requirementId)) next.delete(requirementId); else next.add(requirementId);
     return next;
   });
+
+  const findReplacement = (requirementId: string) => {
+    setInviteRequirementId(requirementId);
+    setInviteSelectionVersion((current) => current + 1);
+    window.setTimeout(() => document.getElementById("invite-composer")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+  };
 
   if (loading) return <div className="app-page"><AppHeader /><main className="app-main"><LoadingCard /></main></div>;
   if (!asar || error) return <div className="app-page"><AppHeader /><main className="app-main"><EmptyState title="Асар не найден" text={error || "Проверьте ссылку"} /></main></div>;
@@ -79,16 +88,21 @@ export function AsarDetail({ id }: { id: string }) {
         <div className="stat-list"><div><span>Потребностей</span><strong>{asar.requirements.length}</strong></div><div><span>Участников</span><strong>{participants}</strong></div><div><span>Критических пробелов</span><strong>{asar.readiness.missingCritical.length}</strong></div></div></aside>}
     </div>
 
+    {asar.lifecycleStatus === "PUBLISHED" && <ReconfirmationPanel asarId={id} onAsarRefresh={refresh} onFindReplacement={findReplacement} replacementNeeded={(requirementId) => {
+      const requirement = asar.requirements.find((item) => item.id === requirementId);
+      return Boolean(requirement?.isCritical && requirement.claimedQuantity < requirement.requiredQuantity);
+    }} />}
+
     <section className="section-block"><div className="section-heading"><div><span className="section-kicker">Состав асара</span><h2>Люди и ресурсы</h2></div><small className="section-note">Нажмите «Участники», чтобы перевернуть карточку.</small></div>
       <div className="requirement-list">{asar.requirements.map((item) => { const info = requirementTypeInfo(item.type); const isFlipped = flipped.has(item.id); return <article className={`requirement-flip-card ${isFlipped ? "flipped" : ""}`} key={item.id}><div className="requirement-card-inner">
         <div className="requirement-card requirement-face requirement-front"><div className="requirement-head"><span className="requirement-icon">{info.icon}</span><div className="requirement-copy"><h3>{item.customTitle} {item.isCritical && <span className="danger-text">*</span>}</h3><p>{item.description || info.label}</p></div><div className="requirement-numbers"><strong>{item.confirmedQuantity} / {item.requiredQuantity}</strong><small>подтверждено</small></div></div><div className="bar"><i style={{ width: `${Math.min(100, item.confirmedQuantity / item.requiredQuantity * 100)}%` }} /></div><button className="card-flip-button" type="button" onClick={() => toggleCard(item.id)}>Участники ({item.commitments?.length ?? 0}) →</button></div>
-        <div className="requirement-card requirement-face requirement-back"><div className="requirement-back-head"><div><span className="section-kicker">{item.customTitle}</span><h3>Участники</h3></div><button className="card-flip-button" type="button" onClick={() => toggleCard(item.id)}>← Назад</button></div>{item.commitments?.length ? <div className="commitment-list">{item.commitments.map((commitment) => { const profileUrl = commitment.contactType === "TELEGRAM" ? telegramProfileUrl(commitment.contactValue) : ""; return <div className="commitment-row" key={commitment.id}><div className="commitment-person"><strong>{commitment.participantName}</strong>{profileUrl ? <a href={profileUrl} target="_blank" rel="noreferrer">{commitment.contactValue} ↗</a> : <small>{commitment.contactValue}{commitment.comment && ` · ${commitment.comment}`}</small>}</div><StatusBadge state={commitment.status} /></div>; })}</div> : <div className="empty-participants">Пока никто не откликнулся.</div>}</div>
+        <div className="requirement-card requirement-face requirement-back"><div className="requirement-back-head"><div><span className="section-kicker">{item.customTitle}</span><h3>Участники</h3></div><button className="card-flip-button" type="button" onClick={() => toggleCard(item.id)}>← Назад</button></div>{item.commitments?.length ? <div className="commitment-list">{item.commitments.map((commitment) => { const profileUrl = commitment.contactType === "TELEGRAM" ? telegramProfileUrl(commitment.contactValue) : ""; const reconfirmation = commitment as typeof commitment & { reconfirmationState?: "PENDING" | "CONFIRMED" | "CANCELLED"; reconfirmationDeliveryStatus?: string }; return <div className="commitment-row" key={commitment.id}><div className="commitment-person"><strong>{commitment.participantName}</strong>{profileUrl ? <a href={profileUrl} target="_blank" rel="noreferrer">{commitment.contactValue} ↗</a> : <small>{commitment.contactValue}{commitment.comment && ` · ${commitment.comment}`}</small>}{reconfirmation.reconfirmationState && <span className={`commitment-freshness state-${reconfirmation.reconfirmationState.toLowerCase()}`}>{reconfirmation.reconfirmationState === "PENDING" ? "Ждём свежего ответа" : reconfirmation.reconfirmationState === "CONFIRMED" ? "Подтвердил снова" : "Не сможет"}</span>}</div><StatusBadge state={commitment.status} /></div>; })}</div> : <div className="empty-participants">Пока никто не откликнулся.</div>}</div>
       </div></article>; })}</div>
     </section>
 
     {terminal && asar.lifecycleStatus === "COMPLETED" && asar.followUpOffers && asar.followUpOffers.length > 0 && <section className="section-block follow-up-history"><div className="section-heading"><div><span className="section-kicker">После асара</span><h2>С чем можно обратиться снова</h2></div></div>{asar.followUpOffers.map((entry) => <div className="follow-up-history-row" key={entry.memberId}><strong>{entry.displayName}</strong><OfferChips offers={entry.offers} /></div>)}</section>}
 
-    {!terminal && !needsOutcome && asar.lifecycleStatus !== "DRAFT" && <InviteComposer asar={asar} />}
+    {!terminal && !needsOutcome && asar.lifecycleStatus !== "DRAFT" && <InviteComposer key={`${inviteRequirementId || "general"}:${inviteSelectionVersion}`} asar={asar} preferredRequirementId={inviteRequirementId} />}
 
     {!terminal && <details className="other-actions"><summary>Другие действия</summary><div><p>{asar.lifecycleStatus === "PUBLISHED" ? "«Начать асар» означает, что люди приступили к делу. «Отменить» — что дело не состоится." : "Отмена означает, что асар не состоится. Это отличается от завершения состоявшегося дела."}</p><button className="text-action danger-text" disabled={Boolean(busy)} onClick={cancel}>Отменить асар</button></div></details>}
   </main></div>;

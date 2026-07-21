@@ -27,6 +27,7 @@ export async function POST(request: Request, context: { params: Promise<{ token:
   }
   const payload = await request.json() as {
     requirementId?: string; participantName?: string; contactType?: string; contactValue?: string; quantity?: number; comment?: string;
+    reminderOptIn?: boolean;
   };
   const requirementId = payload.requirementId ?? "";
   const quantity = Math.max(1, Math.floor(Number(payload.quantity) || 1));
@@ -44,15 +45,17 @@ export async function POST(request: Request, context: { params: Promise<{ token:
   const contactHash = await hashToken(normalizeContact(payload.contactValue));
   const telegramUser = await telegramUserFromRequest(request);
   const commitmentStatus = telegramUser ? "CONFIRMED" : "CLAIMED";
+  const contactType = payload.contactType === "PHONE" ? "PHONE" : "TELEGRAM";
+  const reminderOptIn = Boolean(telegramUser && contactType === "TELEGRAM" && payload.reminderOptIn === true);
   const commitmentId = crypto.randomUUID();
   try {
     const db = database();
-    const common = [commitmentId, requirementId, payload.participantName.trim(), payload.contactType === "PHONE" ? "PHONE" : "TELEGRAM", payload.contactValue.trim(), contactHash, telegramUser?.ownerKey ?? null, quantity, commitmentStatus, await hashToken(manageToken)] as const;
+    const common = [commitmentId, requirementId, payload.participantName.trim(), contactType, payload.contactValue.trim(), contactHash, telegramUser?.ownerKey ?? null, reminderOptIn ? 1 : 0, quantity, commitmentStatus, await hashToken(manageToken)] as const;
     let result;
     try {
       result = await db.prepare(`INSERT INTO commitments
-        (id, requirement_id, participant_name, contact_type, contact_value, normalized_contact_hash, participant_key, quantity, status, manage_token_hash, comment)
-        SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+        (id, requirement_id, participant_name, contact_type, contact_value, normalized_contact_hash, participant_key, reminder_opt_in, quantity, status, manage_token_hash, comment)
+        SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
         WHERE (SELECT COALESCE(SUM(quantity), 0) FROM commitments WHERE requirement_id = ? AND status IN ('CLAIMED','CONFIRMED','ATTENDED')) + ?
           <= (SELECT required_quantity FROM requirements WHERE id = ?)`)
         .bind(...common, payload.comment?.trim() ?? "", requirementId, quantity, requirementId).run();
@@ -60,8 +63,8 @@ export async function POST(request: Request, context: { params: Promise<{ token:
       const message = caught instanceof Error ? caught.message : "";
       if (!message.includes("manage_token_preview")) throw caught;
       result = await db.prepare(`INSERT INTO commitments
-        (id, requirement_id, participant_name, contact_type, contact_value, normalized_contact_hash, participant_key, quantity, status, manage_token_hash, manage_token_preview, comment)
-        SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+        (id, requirement_id, participant_name, contact_type, contact_value, normalized_contact_hash, participant_key, reminder_opt_in, quantity, status, manage_token_hash, manage_token_preview, comment)
+        SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
         WHERE (SELECT COALESCE(SUM(quantity), 0) FROM commitments WHERE requirement_id = ? AND status IN ('CLAIMED','CONFIRMED','ATTENDED')) + ?
           <= (SELECT required_quantity FROM requirements WHERE id = ?)`)
         .bind(...common, manageToken.slice(0, 8), payload.comment?.trim() ?? "", requirementId, quantity, requirementId).run();
