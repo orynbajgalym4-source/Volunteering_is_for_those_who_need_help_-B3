@@ -38,10 +38,18 @@ function shape(row: ManageRow) {
   };
 }
 
+async function asarStatus(asarId: string) {
+  const asar = await getAsarView(asarId);
+  return asar ? {
+    lifecycleStatus: asar.lifecycleStatus,
+    readiness: asar.readiness,
+  } : null;
+}
+
 export async function GET(_request: Request, context: { params: Promise<{ token: string }> }) {
   const { token } = await context.params;
   const item = await commitmentByToken(token);
-  return item ? Response.json({ commitment: shape(item) }) : Response.json({ code: "NOT_FOUND", message: "Ссылка управления недоступна" }, { status: 404 });
+  return item ? Response.json({ commitment: shape(item), asarStatus: await asarStatus(item.asar_id) }) : Response.json({ code: "NOT_FOUND", message: "Ссылка управления недоступна" }, { status: 404 });
 }
 
 export async function POST(request: Request, context: { params: Promise<{ token: string }> }) {
@@ -76,5 +84,5 @@ export async function POST(request: Request, context: { params: Promise<{ token:
     return Response.json({ code: "INVALID_ACTION", message: "Неизвестное действие" }, { status: 400 });
   }
   const updated = await commitmentByToken(token);
-  return Response.json({ commitment: shape(updated!), asar: await getAsarView(current.asar_id) });
+  return Response.json({ commitment: shape(updated!), asarStatus: await asarStatus(current.asar_id) });
 }
