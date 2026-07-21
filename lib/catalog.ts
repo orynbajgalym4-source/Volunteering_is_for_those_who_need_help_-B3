@@ -1,10 +1,10 @@
 export const ASAR_CATEGORIES = [
-  { value: "MOVE_TRANSPORT", label: "Перенести и перевезти", icon: "↗" },
-  { value: "REPAIR_INSTALL", label: "Починить и установить", icon: "⌁" },
-  { value: "CLEAN_PREPARE", label: "Убрать и подготовить", icon: "✦" },
-  { value: "COLLECT_DISTRIBUTE", label: "Собрать и распределить", icon: "⊞" },
-  { value: "ACCOMPANY_DELIVER", label: "Сопроводить и доставить", icon: "→" },
-  { value: "OTHER", label: "Другое", icon: "+" },
+  { value: "MOVE_TRANSPORT", label: "Переезд", hint: "Перенести или перевезти", icon: "📦" },
+  { value: "REPAIR_INSTALL", label: "Ремонт", hint: "Починить или установить", icon: "🔧" },
+  { value: "CLEAN_PREPARE", label: "Уборка", hint: "Убрать пространство", icon: "🧹" },
+  { value: "COLLECT_DISTRIBUTE", label: "Подготовка", hint: "Собрать и организовать", icon: "☑" },
+  { value: "ACCOMPANY_DELIVER", label: "Доставка", hint: "Сопроводить или доставить", icon: "→" },
+  { value: "OTHER", label: "Другое", hint: "Любой другой сценарий", icon: "+" },
 ] as const;
 
 export type AsarCategory = (typeof ASAR_CATEGORIES)[number]["value"];

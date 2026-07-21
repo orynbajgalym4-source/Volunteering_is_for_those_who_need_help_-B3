@@ -29,7 +29,7 @@ export async function POST(request: Request) {
   const startsAt = payload.startsAt?.trim() ?? "";
   const requirements = payload.requirements ?? [];
   const groupId = payload.groupId?.trim() ?? "";
-  if (!groupId) return Response.json({ code: "GROUP_REQUIRED", message: "Выберите или создайте группу" }, { status: 400 });
+  if (!groupId) return Response.json({ code: "GROUP_REQUIRED", message: "Выберите или создайте круг" }, { status: 400 });
   if (!title || !startsAt) return Response.json({ code: "INVALID_ASAR", message: "Укажите название и дату" }, { status: 400 });
   if (!Number.isFinite(new Date(startsAt).getTime()) || new Date(startsAt).getTime() <= Date.now()) {
     return Response.json({ code: "INVALID_START_TIME", message: "Выберите будущую дату и время" }, { status: 400 });
@@ -46,7 +46,7 @@ export async function POST(request: Request) {
   await ensureDatabase();
   const db = database();
   const membership = await db.prepare("SELECT role FROM group_members WHERE group_id = ? AND member_key = ?").bind(groupId, owner.email).first();
-  if (!membership) return Response.json({ code: "GROUP_FORBIDDEN", message: "Вы не состоите в этой группе" }, { status: 403 });
+  if (!membership) return Response.json({ code: "GROUP_FORBIDDEN", message: "Вы не состоите в этом круге" }, { status: 403 });
   const asarId = crypto.randomUUID();
   const statements = [
     db.prepare(`INSERT INTO asars (id, owner_email, owner_name, group_id, category, title, description, starts_at, public_location, exact_address, beneficiary_consent_confirmed)

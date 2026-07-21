@@ -26,7 +26,7 @@ export function EmptyState({ title, text, action }: { title: string; text: strin
 }
 
 export function StatusBadge({ state }: { state: string }) {
-  const labels: Record<string, string> = { NOT_READY: "Не готов", PROVISIONAL: "Условно готов", READY: "Готов", DRAFT: "Черновик", PUBLISHED: "Идёт набор", IN_PROGRESS: "Идёт сейчас", COMPLETED: "Прошёл", CANCELLED: "Отменён", EXPIRED: "Прошёл", CLAIMED: "Откликнулся", CONFIRMED: "Подтвердил", ATTENDED: "Прибыл", NO_SHOW: "Не пришёл" };
+  const labels: Record<string, string> = { NOT_READY: "Не готов", PROVISIONAL: "Условно готов", READY: "Готов", DRAFT: "Черновик", PUBLISHED: "Идёт набор", IN_PROGRESS: "Идёт сейчас", COMPLETED: "Прошёл", CANCELLED: "Отменён", EXPIRED: "Нужен итог", CLAIMED: "Откликнулся", CONFIRMED: "Подтвердил", ATTENDED: "Прибыл", NO_SHOW: "Не пришёл" };
   return <span className={`badge badge-${state.toLowerCase()}`}>{labels[state] ?? state}</span>;
 }
 

@@ -20,7 +20,7 @@ export function GroupCreator({ onCreated, onCancel }: { onCreated: (group: Group
     reader.readAsDataURL(file);
   };
   const submit = async () => {
-    if (!name.trim()) return setError("Введите название группы");
+    if (!name.trim()) return setError("Введите название круга");
     setBusy(true); setError("");
     try {
       const body = new FormData();
@@ -29,9 +29,9 @@ export function GroupCreator({ onCreated, onCancel }: { onCreated: (group: Group
       if (photo) body.set("photo", photo);
       const data = await api<{ group: GroupSummary }>("/api/groups", { method: "POST", body });
       onCreated(data.group);
-    } catch (caught) { setError(caught instanceof Error ? caught.message : "Не удалось создать группу"); }
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "Не удалось создать круг"); }
     finally { setBusy(false); }
   };
 
-  return <div className="group-creator"><div className="group-photo-picker"><label><span className={`group-photo-preview ${preview ? "has-photo" : ""}`} style={preview ? { backgroundImage: `url(${preview})` } : undefined}>{!preview && (name.trim().slice(0, 1).toUpperCase() || "+")}</span><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => choosePhoto(event.target.files?.[0])} /><strong>{preview ? "Сменить фото" : "Добавить фото"}</strong><small>JPG, PNG или WebP до 3 МБ</small></label></div><div className="group-create-fields"><div className="field"><label htmlFor="group-name">Название группы *</label><input id="group-name" className="input" maxLength={80} value={name} onChange={(event) => setName(event.target.value)} placeholder="Например: Соседи дома 18" /></div><div className="field"><label htmlFor="group-description">Описание</label><textarea id="group-description" className="textarea" maxLength={500} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Кто входит в группу и какие общие дела вы организуете" /><small className="field-hint">Описание помогает новым участникам понять контекст группы.</small></div></div>{error && <div className="error-banner">{error}</div>}<div className="group-create-actions">{onCancel && <button type="button" className="button button-secondary" onClick={onCancel}>Назад к выбору</button>}<button type="button" className="button button-primary" disabled={busy} onClick={() => void submit()}>{busy ? "Создаём…" : "Создать группу"}</button></div></div>;
+  return <div className="group-creator"><div className="group-photo-picker"><label><span className={`group-photo-preview ${preview ? "has-photo" : ""}`} style={preview ? { backgroundImage: `url(${preview})` } : undefined}>{!preview && (name.trim().slice(0, 1).toUpperCase() || "+")}</span><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => choosePhoto(event.target.files?.[0])} /><strong>{preview ? "Сменить фото" : "Добавить фото"}</strong><small>JPG, PNG или WebP до 3 МБ</small></label></div><div className="group-create-fields"><div className="field"><label htmlFor="group-name">Название круга *</label><input id="group-name" className="input" maxLength={80} value={name} onChange={(event) => setName(event.target.value)} placeholder="Например: Соседи дома 18" /></div><div className="field"><label htmlFor="group-description">Описание</label><textarea id="group-description" className="textarea" maxLength={500} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Кто входит в круг и какие общие дела вы организуете" /><small className="field-hint">Описание помогает новым участникам понять контекст круга.</small></div></div>{error && <div className="error-banner">{error}</div>}<div className="group-create-actions">{onCancel && <button type="button" className="button button-secondary" onClick={onCancel}>Назад к выбору</button>}<button type="button" className="button button-primary" disabled={busy} onClick={() => void submit()}>{busy ? "Создаём…" : "Создать круг"}</button></div></div>;
 }

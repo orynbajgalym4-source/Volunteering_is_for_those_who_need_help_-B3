@@ -16,7 +16,7 @@ export async function POST(request: Request) {
   const name = String(form.get("name") ?? "").trim();
   const description = String(form.get("description") ?? "").trim();
   const photo = form.get("photo");
-  if (!name || name.length > 80) return Response.json({ code: "INVALID_GROUP_NAME", message: "Введите название группы до 80 символов" }, { status: 400 });
+  if (!name || name.length > 80) return Response.json({ code: "INVALID_GROUP_NAME", message: "Введите название круга до 80 символов" }, { status: 400 });
   if (description.length > 500) return Response.json({ code: "INVALID_GROUP_DESCRIPTION", message: "Описание должно быть короче 500 символов" }, { status: 400 });
   if (photo instanceof File && photo.size > 0 && (!IMAGE_TYPES.has(photo.type) || photo.size > 3 * 1024 * 1024)) {
     return Response.json({ code: "INVALID_GROUP_PHOTO", message: "Загрузите JPG, PNG или WebP размером до 3 МБ" }, { status: 400 });

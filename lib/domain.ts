@@ -80,7 +80,7 @@ export function canTransition(from: LifecycleStatus, to: LifecycleStatus) {
     IN_PROGRESS: ["COMPLETED", "CANCELLED"],
     COMPLETED: [],
     CANCELLED: [],
-    EXPIRED: [],
+    EXPIRED: ["COMPLETED", "CANCELLED"],
   };
   return allowed[from].includes(to);
 }
