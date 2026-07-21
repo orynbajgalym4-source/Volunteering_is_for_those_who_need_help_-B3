@@ -32,14 +32,15 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   const token = randomToken();
   const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24 * 14).toISOString();
   const db = database();
-  const columns = await db.prepare("PRAGMA table_info(invites)").all<{ name: string }>();
   const common = [crypto.randomUUID(), id, scope === "SINGLE_REQUIREMENT" ? payload.requirementId : null, scope, await hashToken(token), expiresAt] as const;
-  if (columns.results.some((column) => column.name === "token_preview")) {
-    await db.prepare("INSERT INTO invites (id, asar_id, requirement_id, scope, token_hash, expires_at, token_preview) VALUES (?, ?, ?, ?, ?, ?, ?)")
-      .bind(...common, token.slice(0, 8)).run();
-  } else {
+  try {
     await db.prepare("INSERT INTO invites (id, asar_id, requirement_id, scope, token_hash, expires_at) VALUES (?, ?, ?, ?, ?, ?)")
       .bind(...common).run();
+  } catch (caught) {
+    const message = caught instanceof Error ? caught.message : "";
+    if (!message.includes("token_preview")) throw caught;
+    await db.prepare("INSERT INTO invites (id, asar_id, requirement_id, scope, token_hash, expires_at, token_preview) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .bind(...common, token.slice(0, 8)).run();
   }
   const publicUrl = new URL(`/join/${token}`, request.url).toString();
   return Response.json({ invite: { token, scope, requirementId: scope === "SINGLE_REQUIREMENT" ? payload.requirementId : null, expiresAt, shareUrl: publicUrl, publicUrl, telegramUrl: telegramInviteLink(token) } }, { status: 201 });

@@ -1,15 +1,19 @@
 import { telegramIdentityFromRequest } from "./telegram-auth.server";
 import { telegramSessionIdentityFromRequest } from "./telegram-session.server";
 
-export type OrganizerIdentity = { email: string; displayName: string };
+export type OrganizerIdentity = { email: string; displayName: string; username?: string | null };
+
+export async function telegramUserFromRequest(request: Request) {
+  return await telegramIdentityFromRequest(request) ?? await telegramSessionIdentityFromRequest(request);
+}
 
 export async function organizerFromRequest(request: Request): Promise<OrganizerIdentity | null> {
-  const user = await telegramIdentityFromRequest(request) ?? await telegramSessionIdentityFromRequest(request);
-  if (user) return { email: user.ownerKey, displayName: user.displayName };
+  const user = await telegramUserFromRequest(request);
+  if (user) return { email: user.ownerKey, displayName: user.displayName, username: user.username };
 
   const host = new URL(request.url).hostname;
   if (host === "localhost" || host === "127.0.0.1") {
-    return { email: "telegram:demo", displayName: "Аружан" };
+    return { email: "telegram:demo", displayName: "Аружан", username: "aruzhan" };
   }
   return null;
 }

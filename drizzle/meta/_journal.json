@@ -22,6 +22,13 @@
       "when": 1784572381157,
       "tag": "0002_little_goblin_queen",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1784626485426,
+      "tag": "0003_sparkling_mikhail_rasputin",
+      "breakpoints": true
     }
   ]
 }

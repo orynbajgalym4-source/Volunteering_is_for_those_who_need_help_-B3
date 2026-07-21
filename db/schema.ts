@@ -1,10 +1,34 @@
 import { sql } from "drizzle-orm";
 import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
+export const groups = sqliteTable("groups", {
+  id: text("id").primaryKey(),
+  ownerKey: text("owner_key").notNull(),
+  name: text("name").notNull(),
+  description: text("description").notNull().default(""),
+  photoKey: text("photo_key"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [index("groups_owner_idx").on(table.ownerKey)]);
+
+export const groupMembers = sqliteTable("group_members", {
+  id: text("id").primaryKey(),
+  groupId: text("group_id").notNull().references(() => groups.id, { onDelete: "cascade" }),
+  memberKey: text("member_key").notNull(),
+  displayName: text("display_name").notNull(),
+  username: text("username"),
+  role: text("role").notNull().default("MEMBER"),
+  joinedAt: text("joined_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("group_members_group_member_idx").on(table.groupId, table.memberKey),
+  index("group_members_member_idx").on(table.memberKey),
+]);
+
 export const asars = sqliteTable("asars", {
   id: text("id").primaryKey(),
   ownerEmail: text("owner_email").notNull(),
   ownerName: text("owner_name").notNull(),
+  groupId: text("group_id").references(() => groups.id, { onDelete: "set null" }),
   category: text("category").notNull().default("OTHER"),
   title: text("title").notNull(),
   description: text("description").notNull().default(""),

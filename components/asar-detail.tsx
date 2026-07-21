@@ -9,6 +9,7 @@ import { AppHeader, EmptyState, formatDate, LoadingCard, ReadinessOrb, StatusBad
 import { ASAR_CATEGORIES, requirementTypeInfo } from "../lib/catalog";
 import { isTerminalLifecycle } from "../lib/domain";
 import { telegramHaptic } from "../lib/telegram";
+import { GroupAvatar } from "./group-ui";
 
 type InviteResponse = { invite: { publicUrl?: string; shareUrl: string; telegramUrl?: string } };
 
@@ -86,7 +87,7 @@ export function AsarDetail({ id }: { id: string }) {
     {message && <div className={message.includes("скопирована") ? "success-banner" : "error-banner"}>{message}</div>}
     {terminal && <div className="history-banner"><StatusBadge state={asar.lifecycleStatus} /><div><strong>{asar.lifecycleStatus === "CANCELLED" ? "Асар отменён и не состоялся" : "Асар завершён и сохранён в истории"}</strong><span>Новые отклики, приглашения и другие действия отключены.</span></div></div>}
     <div className={`detail-grid ${terminal ? "detail-grid-history" : ""}`}>
-      <section className="hero-panel"><div className="hero-panel-top"><StatusBadge state={asar.lifecycleStatus} /><span className="muted">{formatDate(asar.startsAt)}</span></div><span className="section-kicker">{categoryLabel}</span><h1>{asar.title}</h1>{asar.description && <p className="hero-description">{asar.description}</p>}
+      <section className="hero-panel"><div className="hero-panel-top"><StatusBadge state={asar.lifecycleStatus} /><span className="muted">{formatDate(asar.startsAt)}</span></div><span className="section-kicker">{categoryLabel}</span><h1>{asar.title}</h1>{asar.description && <p className="hero-description">{asar.description}</p>}{asar.group && <Link className="event-group-card" href={`/app/groups/${asar.group.id}`}><GroupAvatar group={asar.group} size="small" /><span><small>Группа</small><strong>{asar.group.name}</strong><em>{asar.group.memberCount} участников</em></span><i>›</i></Link>}
         <div className="event-attributes" aria-label="Атрибуты асара"><span>⌖ {asar.publicLocation || "Место уточняется"}</span><span>◷ {formatDate(asar.startsAt, true)}</span><span>◫ {asar.requirements.length} потребностей</span><span>● {participants} участников</span></div>
         <div className="readiness-row"><ReadinessOrb state={asar.readiness.state} percent={asar.readiness.percentage} /><div className="readiness-text"><h3>{readinessTitle}</h3><p>{asar.readiness.state === "READY" ? "Все критические обязательства подтверждены." : "Готовность меняется после откликов и подтверждений участников."}</p>{missing.length > 0 && <div className="risk-list">Критично: {missing.join(", ")}</div>}</div></div>
       </section>
