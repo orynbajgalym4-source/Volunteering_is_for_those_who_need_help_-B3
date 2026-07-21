@@ -1,19 +1,66 @@
-import { calculateReadiness } from "../../../lib/domain";
 import { isAsarCategory, isRequirementType } from "../../../lib/catalog";
 import { organizerFromRequest, unauthorized } from "../../../lib/auth.server";
+import { calculateReadiness } from "../../../lib/domain";
 import { database, ensureDatabase, getAsarView, getGroupSummary, getRequirements, mapAsar } from "../../../lib/store.server";
 import { isAsarTimeMode, storedScheduleIsFuture } from "../../../lib/schedule";
+
+type ReconfirmationSummaryRow = {
+  asar_id: string;
+  id: string;
+  expires_at: string;
+  total_people: number;
+  answered_people: number;
+  pending_items: number;
+  critical_pending_items: number;
+};
 
 export async function GET(request: Request) {
   const owner = await organizerFromRequest(request);
   if (!owner) return unauthorized();
   await ensureDatabase();
-  const rows = await database().prepare("SELECT * FROM asars WHERE owner_email = ? AND group_id IS NOT NULL ORDER BY starts_at DESC").bind(owner.email).all<Record<string, unknown>>();
+  const db = database();
+  const [rows, roundRows] = await Promise.all([
+    db.prepare("SELECT * FROM asars WHERE owner_email = ? AND group_id IS NOT NULL ORDER BY starts_at DESC")
+      .bind(owner.email).all<Record<string, unknown>>(),
+    db.prepare(`SELECT rr.asar_id, rr.id, rr.expires_at,
+      (SELECT COUNT(*) FROM reconfirmation_requests rq WHERE rq.round_id = rr.id) AS total_people,
+      (SELECT COUNT(*) FROM reconfirmation_requests rq WHERE rq.round_id = rr.id
+        AND NOT EXISTS (SELECT 1 FROM reconfirmation_items ri WHERE ri.request_id = rq.id AND ri.state = 'PENDING')) AS answered_people,
+      (SELECT COUNT(*) FROM reconfirmation_items ri WHERE ri.round_id = rr.id AND ri.state = 'PENDING') AS pending_items,
+      (SELECT COUNT(*) FROM reconfirmation_items ri JOIN commitments c ON c.id = ri.commitment_id
+        JOIN requirements r ON r.id = c.requirement_id
+        WHERE ri.round_id = rr.id AND ri.state = 'PENDING' AND r.is_critical = 1) AS critical_pending_items
+      FROM reconfirmation_rounds rr JOIN asars a ON a.id = rr.asar_id
+      WHERE a.owner_email = ? AND rr.closed_at IS NULL`).bind(owner.email).all<ReconfirmationSummaryRow>(),
+  ]);
+  const roundByAsar = new Map(roundRows.results.map((row) => [row.asar_id, row]));
+  const groupCache = new Map<string, ReturnType<typeof getGroupSummary>>();
   const items = await Promise.all(rows.results.map(async (row) => {
-    const requirements = await getRequirements(String(row.id));
     const mapped = mapAsar(row);
-    const group = mapped.groupId ? await getGroupSummary(mapped.groupId, owner.email) : undefined;
-    return { ...mapped, group, requirements, readiness: calculateReadiness(requirements) };
+    const requirements = await getRequirements(String(row.id));
+    let group;
+    if (mapped.groupId) {
+      const cached = groupCache.get(mapped.groupId) ?? getGroupSummary(mapped.groupId, owner.email);
+      groupCache.set(mapped.groupId, cached);
+      group = await cached;
+    }
+    const round = roundByAsar.get(String(row.id));
+    return {
+      ...mapped,
+      group,
+      requirements,
+      readiness: calculateReadiness(requirements),
+      ...(round ? {
+        reconfirmationSummary: {
+          id: round.id,
+          isOpen: String(row.lifecycle_status) === "PUBLISHED" && new Date(round.expires_at).getTime() > Date.now(),
+          totalPeople: Number(round.total_people),
+          answeredPeople: Number(round.answered_people),
+          pendingItems: Number(round.pending_items),
+          criticalPendingItems: Number(round.critical_pending_items),
+        },
+      } : {}),
+    };
   }));
   return Response.json({ asars: items, organizer: owner });
 }

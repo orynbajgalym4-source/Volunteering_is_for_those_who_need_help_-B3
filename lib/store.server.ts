@@ -1,8 +1,10 @@
 import { env } from "cloudflare:workers";
-import { calculateReadiness, effectiveLifecycleStatus, quantities, type CommitmentStatus, type RequirementView } from "./domain";
+import { calculateReadiness, effectiveLifecycleStatus, type CommitmentStatus, type RequirementView } from "./domain";
 import { normalizeAsarCategory, normalizeRequirementType } from "./catalog";
-import type { GroupSummary } from "./types";
+import type { GroupSummary, ReconfirmationDeliveryStatus, ReconfirmationItemState } from "./types";
 import { isMemberOffer, type MemberOffer } from "./member-offers";
+import { quantitiesWithReconfirmation } from "./reconfirmation";
+import { getReconfirmationOverview } from "./reconfirmation.server";
 
 export function database(): D1Database {
   if (!env.DB) throw new Error("D1 binding DB is unavailable");
@@ -58,7 +60,7 @@ export async function ensureDatabase() {
     db.prepare(`CREATE TABLE IF NOT EXISTS commitments (
       id TEXT PRIMARY KEY, requirement_id TEXT NOT NULL REFERENCES requirements(id) ON DELETE CASCADE,
       participant_name TEXT NOT NULL, contact_type TEXT NOT NULL, contact_value TEXT NOT NULL,
-      normalized_contact_hash TEXT NOT NULL, participant_key TEXT,
+      normalized_contact_hash TEXT NOT NULL, participant_key TEXT, reminder_opt_in INTEGER NOT NULL DEFAULT 0,
       group_member_id TEXT REFERENCES group_members(id) ON DELETE SET NULL,
       quantity INTEGER NOT NULL DEFAULT 1,
       status TEXT NOT NULL DEFAULT 'CLAIMED', manage_token_hash TEXT NOT NULL UNIQUE,
@@ -67,6 +69,31 @@ export async function ensureDatabase() {
       cancelled_at TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       UNIQUE(requirement_id, normalized_contact_hash)
+    )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS reconfirmation_rounds (
+      id TEXT PRIMARY KEY, asar_id TEXT NOT NULL REFERENCES asars(id) ON DELETE CASCADE,
+      organizer_key TEXT NOT NULL, schedule_key TEXT NOT NULL, starts_at TEXT NOT NULL,
+      time_mode TEXT NOT NULL, expires_at TEXT NOT NULL, closed_at TEXT, close_reason TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(asar_id, schedule_key)
+    )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS reconfirmation_requests (
+      id TEXT PRIMARY KEY, round_id TEXT NOT NULL REFERENCES reconfirmation_rounds(id) ON DELETE CASCADE,
+      participant_ref TEXT NOT NULL, participant_key TEXT, normalized_contact_hash TEXT NOT NULL,
+      participant_name TEXT NOT NULL, contact_type TEXT NOT NULL, contact_value TEXT NOT NULL,
+      delivery_status TEXT NOT NULL DEFAULT 'PENDING', token_hash TEXT UNIQUE, token_issued_at TEXT,
+      delivery_attempts INTEGER NOT NULL DEFAULT 0, reminder_count INTEGER NOT NULL DEFAULT 0,
+      last_attempt_at TEXT, last_sent_at TEXT, opened_at TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(round_id, participant_ref)
+    )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS reconfirmation_items (
+      id TEXT PRIMARY KEY, round_id TEXT NOT NULL REFERENCES reconfirmation_rounds(id) ON DELETE CASCADE,
+      request_id TEXT NOT NULL REFERENCES reconfirmation_requests(id) ON DELETE CASCADE,
+      commitment_id TEXT NOT NULL REFERENCES commitments(id) ON DELETE CASCADE,
+      state TEXT NOT NULL DEFAULT 'PENDING', responded_at TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(round_id, commitment_id), UNIQUE(request_id, commitment_id)
     )`),
     db.prepare(`CREATE TABLE IF NOT EXISTS user_preferences (
       owner_key TEXT PRIMARY KEY, bot_messages_allowed INTEGER NOT NULL DEFAULT 0,
@@ -100,6 +127,12 @@ export async function ensureDatabase() {
     db.prepare("CREATE INDEX IF NOT EXISTS requirements_asar_idx ON requirements(asar_id)"),
     db.prepare("CREATE INDEX IF NOT EXISTS invites_asar_idx ON invites(asar_id)"),
     db.prepare("CREATE INDEX IF NOT EXISTS commitments_requirement_idx ON commitments(requirement_id)"),
+    db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS reconfirmation_rounds_active_asar_idx ON reconfirmation_rounds(asar_id) WHERE closed_at IS NULL"),
+    db.prepare("CREATE INDEX IF NOT EXISTS reconfirmation_rounds_asar_idx ON reconfirmation_rounds(asar_id)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS reconfirmation_requests_round_idx ON reconfirmation_requests(round_id)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS reconfirmation_requests_participant_idx ON reconfirmation_requests(participant_key)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS reconfirmation_items_request_idx ON reconfirmation_items(request_id)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS reconfirmation_items_commitment_idx ON reconfirmation_items(commitment_id)"),
     db.prepare("CREATE INDEX IF NOT EXISTS member_offers_member_idx ON member_offers(group_member_id)"),
     db.prepare("CREATE INDEX IF NOT EXISTS profile_offers_member_idx ON profile_offers(member_key)"),
     db.prepare("CREATE INDEX IF NOT EXISTS asar_offer_snapshots_asar_idx ON asar_offer_snapshots(asar_id)"),
@@ -125,6 +158,9 @@ export async function ensureDatabase() {
   if (!commitmentColumns.results.some((column) => column.name === "participant_key")) {
     await db.prepare("ALTER TABLE commitments ADD COLUMN participant_key TEXT").run();
   }
+  if (!commitmentColumns.results.some((column) => column.name === "reminder_opt_in")) {
+    await db.prepare("ALTER TABLE commitments ADD COLUMN reminder_opt_in INTEGER NOT NULL DEFAULT 0").run();
+  }
   await db.prepare("CREATE INDEX IF NOT EXISTS asars_group_idx ON asars(group_id)").run();
   await db.prepare("CREATE INDEX IF NOT EXISTS commitments_group_member_idx ON commitments(group_member_id)").run();
   await db.prepare("CREATE INDEX IF NOT EXISTS commitments_participant_idx ON commitments(participant_key)").run();
@@ -140,17 +176,28 @@ type RawRequirement = {
 };
 type RawCommitment = {
   id: string; requirement_id: string; participant_name: string; contact_type: "PHONE" | "TELEGRAM";
-  contact_value: string; quantity: number; status: CommitmentStatus; comment: string;
+  contact_value: string; quantity: number; status: CommitmentStatus; comment: string; reminder_opt_in: number;
+  reconfirmation_state: ReconfirmationItemState | null; reconfirmation_delivery_status: ReconfirmationDeliveryStatus | null;
 };
 
 export async function getRequirements(asarId: string, includeContacts = false): Promise<RequirementView[]> {
   await ensureDatabase();
   const db = database();
   const requirementRows = await db.prepare("SELECT * FROM requirements WHERE asar_id = ? ORDER BY sort_order, created_at").bind(asarId).all<RawRequirement>();
-  const commitmentRows = await db.prepare(`SELECT c.* FROM commitments c JOIN requirements r ON r.id = c.requirement_id WHERE r.asar_id = ? ORDER BY c.created_at`).bind(asarId).all<RawCommitment>();
+  const commitmentRows = await db.prepare(`SELECT c.*, ri.state AS reconfirmation_state, rrq.delivery_status AS reconfirmation_delivery_status
+    FROM commitments c
+    JOIN requirements r ON r.id = c.requirement_id
+    LEFT JOIN reconfirmation_rounds rr ON rr.asar_id = r.asar_id AND rr.closed_at IS NULL
+    LEFT JOIN reconfirmation_items ri ON ri.round_id = rr.id AND ri.commitment_id = c.id
+    LEFT JOIN reconfirmation_requests rrq ON rrq.id = ri.request_id
+    WHERE r.asar_id = ? ORDER BY c.created_at`).bind(asarId).all<RawCommitment>();
   return requirementRows.results.map((row) => {
     const related = commitmentRows.results.filter((item) => item.requirement_id === row.id);
-    const total = quantities(related.map((item) => ({ status: item.status, quantity: item.quantity })));
+    const total = quantitiesWithReconfirmation(related.map((item) => ({
+      status: item.status,
+      quantity: item.quantity,
+      reconfirmationState: item.reconfirmation_state,
+    })));
     return {
       id: row.id,
       type: normalizeRequirementType(row.kind),
@@ -168,6 +215,11 @@ export async function getRequirements(asarId: string, includeContacts = false): 
         quantity: item.quantity,
         status: item.status,
         comment: item.comment,
+        ...(includeContacts ? {
+          reminderOptIn: Boolean(item.reminder_opt_in),
+          ...(item.reconfirmation_state ? { reconfirmationState: item.reconfirmation_state } : {}),
+          ...(item.reconfirmation_delivery_status ? { reconfirmationDeliveryStatus: item.reconfirmation_delivery_status } : {}),
+        } : {}),
       })),
     };
   });
@@ -185,7 +237,13 @@ export async function getAsarView(asarId: string, ownerEmail?: string) {
   const mapped = mapAsar(asar);
   const group = mapped.groupId ? await getGroupSummary(mapped.groupId, ownerEmail) : undefined;
   const followUpOffers = await getAsarOfferSnapshots(asarId);
-  return { ...mapped, group, requirements, readiness: calculateReadiness(requirements), followUpOffers };
+  const reconfirmation = ownerEmail ? await getReconfirmationOverview(db, {
+    id: String(asar.id),
+    lifecycle_status: String(asar.lifecycle_status),
+    starts_at: String(asar.starts_at),
+    time_mode: asar.time_mode ? String(asar.time_mode) : "EXACT",
+  }, { includeContacts: true }) : undefined;
+  return { ...mapped, group, requirements, readiness: calculateReadiness(requirements), followUpOffers, ...(reconfirmation ? { reconfirmation } : {}) };
 }
 
 type RawGroup = {

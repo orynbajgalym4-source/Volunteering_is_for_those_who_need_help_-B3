@@ -24,6 +24,9 @@ export type CommitmentView = {
   quantity: number;
   status: CommitmentStatus;
   comment: string;
+  reminderOptIn?: boolean;
+  reconfirmationState?: import("./types").ReconfirmationItemState;
+  reconfirmationDeliveryStatus?: import("./types").ReconfirmationDeliveryStatus;
 };
 
 export type Readiness = {

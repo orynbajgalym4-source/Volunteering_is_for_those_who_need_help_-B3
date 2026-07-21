@@ -24,6 +24,11 @@ export function telegramInviteLink(token: string) {
   return `https://t.me/${username}?start=join_${token}`;
 }
 
+export function telegramReconfirmationLink(token: string) {
+  const username = String(env.TELEGRAM_BOT_USERNAME ?? "asar_ops_bot").replace(/^@/, "");
+  return `https://t.me/${username}?start=reconfirm_${token}`;
+}
+
 export function isValidTelegramWebhook(request: Request) {
   const expected = String(env.TELEGRAM_WEBHOOK_SECRET ?? "");
   const received = request.headers.get("x-telegram-bot-api-secret-token") ?? "";

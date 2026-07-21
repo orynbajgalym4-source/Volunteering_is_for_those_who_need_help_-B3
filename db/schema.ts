@@ -76,6 +76,7 @@ export const commitments = sqliteTable("commitments", {
   contactValue: text("contact_value").notNull(),
   normalizedContactHash: text("normalized_contact_hash").notNull(),
   participantKey: text("participant_key"),
+  reminderOptIn: integer("reminder_opt_in", { mode: "boolean" }).notNull().default(false),
   groupMemberId: text("group_member_id").references(() => groupMembers.id, { onDelete: "set null" }),
   quantity: integer("quantity").notNull().default(1),
   status: text("status").notNull().default("CLAIMED"),
@@ -93,6 +94,66 @@ export const commitments = sqliteTable("commitments", {
   index("commitments_requirement_idx").on(table.requirementId),
   index("commitments_participant_idx").on(table.participantKey),
   index("commitments_group_member_idx").on(table.groupMemberId),
+]);
+
+export const reconfirmationRounds = sqliteTable("reconfirmation_rounds", {
+  id: text("id").primaryKey(),
+  asarId: text("asar_id").notNull().references(() => asars.id, { onDelete: "cascade" }),
+  organizerKey: text("organizer_key").notNull(),
+  scheduleKey: text("schedule_key").notNull(),
+  startsAt: text("starts_at").notNull(),
+  timeMode: text("time_mode").notNull(),
+  expiresAt: text("expires_at").notNull(),
+  closedAt: text("closed_at"),
+  closeReason: text("close_reason"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("reconfirmation_rounds_asar_schedule_idx").on(table.asarId, table.scheduleKey),
+  uniqueIndex("reconfirmation_rounds_active_asar_idx").on(table.asarId).where(sql`${table.closedAt} IS NULL`),
+  index("reconfirmation_rounds_asar_idx").on(table.asarId),
+]);
+
+export const reconfirmationRequests = sqliteTable("reconfirmation_requests", {
+  id: text("id").primaryKey(),
+  roundId: text("round_id").notNull().references(() => reconfirmationRounds.id, { onDelete: "cascade" }),
+  participantRef: text("participant_ref").notNull(),
+  participantKey: text("participant_key"),
+  normalizedContactHash: text("normalized_contact_hash").notNull(),
+  participantName: text("participant_name").notNull(),
+  contactType: text("contact_type").notNull(),
+  contactValue: text("contact_value").notNull(),
+  deliveryStatus: text("delivery_status").notNull().default("PENDING"),
+  tokenHash: text("token_hash"),
+  tokenIssuedAt: text("token_issued_at"),
+  deliveryAttempts: integer("delivery_attempts").notNull().default(0),
+  reminderCount: integer("reminder_count").notNull().default(0),
+  lastAttemptAt: text("last_attempt_at"),
+  lastSentAt: text("last_sent_at"),
+  openedAt: text("opened_at"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("reconfirmation_requests_round_participant_idx").on(table.roundId, table.participantRef),
+  uniqueIndex("reconfirmation_requests_token_hash_idx").on(table.tokenHash),
+  index("reconfirmation_requests_round_idx").on(table.roundId),
+  index("reconfirmation_requests_participant_idx").on(table.participantKey),
+]);
+
+export const reconfirmationItems = sqliteTable("reconfirmation_items", {
+  id: text("id").primaryKey(),
+  roundId: text("round_id").notNull().references(() => reconfirmationRounds.id, { onDelete: "cascade" }),
+  requestId: text("request_id").notNull().references(() => reconfirmationRequests.id, { onDelete: "cascade" }),
+  commitmentId: text("commitment_id").notNull().references(() => commitments.id, { onDelete: "cascade" }),
+  state: text("state").notNull().default("PENDING"),
+  respondedAt: text("responded_at"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("reconfirmation_items_round_commitment_idx").on(table.roundId, table.commitmentId),
+  uniqueIndex("reconfirmation_items_request_commitment_idx").on(table.requestId, table.commitmentId),
+  index("reconfirmation_items_request_idx").on(table.requestId),
+  index("reconfirmation_items_commitment_idx").on(table.commitmentId),
 ]);
 
 export const memberOffers = sqliteTable("member_offers", {

@@ -50,9 +50,9 @@ async function invitationImage(asar: AsarView, requirementId: string) {
   return await new Promise<File | null>((resolve) => canvas.toBlob((blob) => resolve(blob ? new File([blob], "asar-invite.png", { type: "image/png" }) : null), "image/png"));
 }
 
-export function InviteComposer({ asar }: { asar: AsarView }) {
+export function InviteComposer({ asar, preferredRequirementId = "" }: { asar: AsarView; preferredRequirementId?: string }) {
   const available = useMemo(() => asar.requirements.filter((item) => item.claimedQuantity < item.requiredQuantity), [asar.requirements]);
-  const [selected, setSelected] = useState("");
+  const [selected, setSelected] = useState(() => available.some((item) => item.id === preferredRequirementId) ? preferredRequirementId : "");
   const [busy, setBusy] = useState(false);
   const [link, setLink] = useState("");
   const [message, setMessage] = useState("");
